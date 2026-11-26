@@ -73,9 +73,8 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
   const create = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setError('');
     try {
-      const person = employees.find(x => x.id === assignee);
       const taskTitle = mode === 'chat' ? (title.trim() || instruction.trim().slice(0, 80)) : title;
-      await request('/tasks', { method: 'POST', body: JSON.stringify({ title: taskTitle, instruction, assigneeId: assignee, reviewerId: person?.managerKey || undefined, priority, acceptanceCriteria: criteria, taskType }) });
+      await request('/tasks', { method: 'POST', body: JSON.stringify({ title: taskTitle, instruction, assigneeId: assignee, reviewerId: 'alex', priority, acceptanceCriteria: criteria, taskType }) });
       setTitle(''); setInstruction(''); setCriteria(''); await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : 'Task gagal dibuat'); }
     finally { setBusy(false); }
