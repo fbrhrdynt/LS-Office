@@ -37,3 +37,20 @@ Verify /api/health, authenticate in Command Center, create a test task and revie
 - Video tasks enter review only after an MP4 has rendered. Approval rejects completion if no artifact path exists.
 - This pipeline creates a motion-comic with animated camera movement over generated frames, not full 3D character rigging or frame-by-frame generative character animation. Each scene is a generated image, so exact character consistency is best-effort.
 - Image and speech generation incur additional OpenAI API usage. Limit video tasks and monitor usage before enabling for broad internal use.
+
+
+## Role-based animated-video workflow
+
+Animated-video tasks are owned by Ethan as Creative Director and are decomposed into persisted PostgreSQL workflow steps. The worker executes one handoff at a time; the next step cannot start until the previous step is completed.
+
+1. Nadia — research, trends, sources and topic validation.
+2. Felix — script, hook, narration and CTA.
+3. Ethan — creative direction and storyboard.
+4. Maya — voice and audio direction.
+5. Production Engine — generates images, voiceover and MP4 using the completed team handoffs.
+6. Daren — technical MP4 QA using ffprobe (video/audio streams, duration and 720x1280 output).
+7. Olivier — caption and distribution preparation only; no automatic publishing.
+
+Adrian is not inserted into pre-publication production because performance analysis requires actual post-publication metrics. An analytics task should be created after verified performance data is available. The Director receives the parent task for final approval after every workflow step completes. A task cannot enter review while a workflow step remains incomplete.
+
+Workflow steps are created atomically with the parent task. Their assignee, status, handoff output and timestamps are persisted and returned by GET /api/tasks/:id.
