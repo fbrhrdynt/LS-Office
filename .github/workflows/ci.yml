@@ -29,6 +29,7 @@ jobs:
           node --check server/worker.mjs
           node --check server/video.mjs
           node --check server/workflows.mjs
+          node --check server/social-oauth.mjs
       - name: Workflow routing tests
         run: npm run test:workflow
       - name: Social OAuth security tests
