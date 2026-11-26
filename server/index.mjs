@@ -87,7 +87,7 @@ const server = http.createServer(async (req, res) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const v = await client.query("INSERT INTO tasks(title,instruction,acceptance_criteria,assignee_id,reviewer_id,priority,status,task_type) VALUES($1,$2,$3,$4,$5,$6,'queued',$7) RETURNING *", [b.title.trim(), b.instruction.trim(), String(b.acceptanceCriteria || '').slice(0, 5000), assigneeId, b.reviewerId || 'alex', ['low', 'normal', 'high', 'urgent'].includes(b.priority) ? b.priority : 'normal', taskType]);
+        const v = await client.query("INSERT INTO tasks(title,instruction,acceptance_criteria,assignee_id,reviewer_id,priority,status,task_type) VALUES($1,$2,$3,$4,$5,$6,'queued',$7) RETURNING *", [b.title.trim(), b.instruction.trim(), String(b.acceptanceCriteria || '').slice(0, 5000), assigneeId, 'alex', ['low', 'normal', 'high', 'urgent'].includes(b.priority) ? b.priority : 'normal', taskType]);
         if (taskType === 'animated_video') {
           for (let i = 0; i < VIDEO_WORKFLOW.length; i++) {
             const step = VIDEO_WORKFLOW[i];
