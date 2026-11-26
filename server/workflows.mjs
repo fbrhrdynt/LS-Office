@@ -1,0 +1,9 @@
+export const VIDEO_WORKFLOW = [
+  { key: 'research', employeeId: 'nadia', title: 'Riset dan validasi ide', instruction: 'Lakukan riset ide sesuai brief. Sajikan tujuan, target audiens, angle, fakta yang perlu diverifikasi, referensi yang benar-benar tersedia, dan rekomendasi. Jangan menulis naskah atau membuat video.' },
+  { key: 'script', employeeId: 'felix', title: 'Penulisan naskah', instruction: 'Susun naskah lengkap berdasarkan brief dan hasil riset Nadia. Sertakan hook, narasi per adegan, dialog bila perlu, CTA, serta estimasi durasi. Jangan mengubah fakta riset tanpa alasan.' },
+  { key: 'storyboard', employeeId: 'ethan', title: 'Creative direction dan storyboard', instruction: 'Tinjau riset dan naskah. Buat creative direction, character bible, urutan scene, komposisi, aksi, ekspresi, lokasi, lighting, dan image direction. Jaga konsistensi karakter. Jangan membuat audio atau memublikasikan konten.' },
+  { key: 'audio_direction', employeeId: 'maya', title: 'Voice dan audio direction', instruction: 'Tinjau naskah dan storyboard. Tentukan voice style, intonasi, tempo, pelafalan, ambience, dan arahan audio. Hasil harus menjadi brief audio yang bisa dipakai production engine. Jangan mengubah storyboard.' },
+  { key: 'render_video', employeeId: null, title: 'Video production engine', instruction: 'Gabungkan hasil kerja tim Creative menjadi video MP4.' },
+  { key: 'qa_video', employeeId: 'daren', title: 'QA video', instruction: 'Periksa keberadaan MP4, container, codec, resolusi, durasi, ukuran file, dan keterbacaan stream. Laporkan bukti pemeriksaan. Jangan menyatakan lulus jika pemeriksaan gagal.' },
+  { key: 'distribution', employeeId: 'olivier', title: 'Distribution preparation', instruction: 'Siapkan caption, hashtag yang relevan, rekomendasi platform, jadwal, dan checklist publikasi berdasarkan video yang sudah lolos QA. Jangan melakukan publikasi; hasil menunggu persetujuan Director.' }
+];
