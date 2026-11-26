@@ -1,9 +1,29 @@
 import pg from 'pg';
+import { renderAnimatedDrama } from './video.mjs';
 const {Pool}=pg,pool=new Pool({connectionString:process.env.DATABASE_URL,max:2});
 const key=process.env.OPENAI_API_KEY,model=process.env.OPENAI_MODEL||'gpt-5-mini',poll=Number(process.env.WORKER_POLL_MS||4000),limit=Number(process.env.MAX_DAILY_RUNS||40);
 if(!key)throw new Error('OPENAI_API_KEY is required by worker');
 let stopping=false,busy=false;
 async function claim(){const c=await pool.connect();try{await c.query('BEGIN');const q=await c.query("SELECT t.*,e.system_prompt FROM tasks t JOIN employees e ON e.id=t.assignee_id WHERE t.status IN ('queued','assigned','changes_requested') ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,t.created_at LIMIT 1 FOR UPDATE OF t SKIP LOCKED");if(!q.rowCount){await c.query('COMMIT');return null;}const t=q.rows[0];await c.query("UPDATE tasks SET status='in_progress',updated_at=now() WHERE id=$1",[t.id]);const n=await c.query('SELECT COALESCE(MAX(attempt),0)+1 AS n FROM task_runs WHERE task_id=$1',[t.id]);const run=await c.query("INSERT INTO task_runs(task_id,attempt,status,model) VALUES($1,$2,'running',$3) RETURNING id",[t.id,n.rows[0].n,model]);await c.query("INSERT INTO task_events(task_id,event_type) VALUES($1,'task_started')",[t.id]);await c.query('COMMIT');return {...t,runId:run.rows[0].id};}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
-async function execute(t){const daily=await pool.query("SELECT count(*)::int AS n FROM task_runs WHERE started_at>=date_trunc('day',now())");if(daily.rows[0].n>=limit)throw new Error('Daily run limit reached');const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);try{const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',signal:controller.signal,headers:{authorization:'Bearer '+key,'content-type':'application/json'},body:JSON.stringify({model,max_output_tokens:Number(process.env.MAX_OUTPUT_TOKENS||1800),input:[{role:'system',content:t.system_prompt+'\nReturn useful work with assumptions and sources. You have no tools and must not claim external actions.'},{role:'user',content:'Task: '+t.title+'\n\nInstruction: '+t.instruction+'\n\nAcceptance criteria: '+(t.acceptance_criteria||'')}]})});const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'OpenAI API HTTP '+r.status);const output=(d.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('\n');if(!output)throw new Error('Empty model output');await pool.query("UPDATE task_runs SET status='succeeded',output_text=$2,input_tokens=$3,output_tokens=$4,finished_at=now() WHERE id=$1",[t.runId,output,d.usage?.input_tokens||0,d.usage?.output_tokens||0]);await pool.query("UPDATE tasks SET status='review',updated_at=now() WHERE id=$1",[t.id]);await pool.query("INSERT INTO task_events(task_id,event_type) VALUES($1,'task_ready_for_review')",[t.id]);}finally{clearTimeout(timer);}}
+async function execute(t){
+ const daily=await pool.query("SELECT count(*)::int AS n FROM task_runs WHERE started_at>=date_trunc('day',now())");
+ if(daily.rows[0].n>limit)throw new Error('Daily run limit reached');
+ if(t.task_type==='animated_video'){
+  const video=await renderAnimatedDrama(t);
+  await pool.query("UPDATE task_runs SET status='succeeded',output_text=$2,finished_at=now() WHERE id=$1",[t.runId,video.summary]);
+  await pool.query("UPDATE tasks SET status='review',artifact_path=$2,artifact_mime='video/mp4',artifact_name=$3,updated_at=now() WHERE id=$1",[t.id,video.output,video.name]);
+  await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'video_rendered',$2)",[t.id,JSON.stringify({fileName:video.name})]);
+  return;
+ }
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
+ try{
+  const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',signal:controller.signal,headers:{authorization:'Bearer '+key,'content-type':'application/json'},body:JSON.stringify({model,max_output_tokens:Number(process.env.MAX_OUTPUT_TOKENS||1800),input:[{role:'system',content:t.system_prompt+'\\nReturn useful work with assumptions and sources. You have no tools and must not claim external actions.'},{role:'user',content:'Task: '+t.title+'\\n\\nInstruction: '+t.instruction+'\\n\\nAcceptance criteria: '+(t.acceptance_criteria||'')}]})});
+  const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'OpenAI API HTTP '+r.status);
+  const output=(d.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('\\n');if(!output)throw new Error('Empty model output');
+  await pool.query("UPDATE task_runs SET status='succeeded',output_text=$2,input_tokens=$3,output_tokens=$4,finished_at=now() WHERE id=$1",[t.runId,output,d.usage?.input_tokens||0,d.usage?.output_tokens||0]);
+  await pool.query("UPDATE tasks SET status='review',updated_at=now() WHERE id=$1",[t.id]);
+  await pool.query("INSERT INTO task_events(task_id,event_type) VALUES($1,'task_ready_for_review')",[t.id]);
+ }finally{clearTimeout(timer);}
+}
 async function tick(){if(busy||stopping)return;busy=true;try{const t=await claim();if(t)try{await execute(t);}catch(e){await pool.query("UPDATE task_runs SET status='failed',error_message=$2,finished_at=now() WHERE id=$1",[t.runId,String(e.message).slice(0,1000)]);await pool.query("UPDATE tasks SET status='failed',updated_at=now() WHERE id=$1",[t.id]);await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'task_failed',$2)",[t.id,JSON.stringify({error:e.message})]);console.error('task failed',t.id,e.message);}}catch(e){console.error('worker error',e);}finally{busy=false;}}
 console.log('LS Office worker online; model='+model);const timer=setInterval(tick,poll);void tick();for(const sig of ['SIGTERM','SIGINT'])process.on(sig,async()=>{stopping=true;clearInterval(timer);await pool.end();process.exit(0);});
