@@ -85,18 +85,48 @@ async function callTextAgent(task, systemPrompt, instruction, context) {
     headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json' },
     body: JSON.stringify({
       model,
-      max_output_tokens: Number(process.env.MAX_OUTPUT_TOKENS || 2200),
+      reasoning: { effort: process.env.OPENAI_REASONING_EFFORT || 'low' },
+      max_output_tokens: Number(process.env.MAX_OUTPUT_TOKENS || 4000),
       input: [
         { role: 'system', content: systemPrompt + '\nIkuti job description dan batas kewenanganmu. Jangan mengerjakan peran personnel lain. Jangan mengarang sumber, angka, progres, atau hasil. Laporkan hasil, kendala, dan handoff secara jelas.' },
         { role: 'user', content: 'Task: ' + task.title + '\nBrief utama: ' + task.instruction + '\nAcceptance criteria: ' + (task.acceptance_criteria || 'Hasil akurat, lengkap, dapat diperiksa.') + '\nInstruksi tahap: ' + instruction + '\n\nKonteks dan hasil tahap sebelumnya:\n' + context }
       ]
     })
   });
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('OpenAI returned a non-JSON response (HTTP ' + response.status + ')');
+  }
   if (!response.ok) throw new Error(data.error?.message || 'OpenAI API HTTP ' + response.status);
-  const output = (data.output || []).flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text).join('\n');
-  if (!output) throw new Error('Empty model output');
-  return { output, inputTokens: data.usage?.input_tokens || 0, outputTokens: data.usage?.output_tokens || 0 };
+
+  const usage = {
+    inputTokens: data.usage?.input_tokens || 0,
+    outputTokens: data.usage?.output_tokens || 0
+  };
+  const outputItems = Array.isArray(data.output) ? data.output : [];
+  const textParts = outputItems.flatMap(item => Array.isArray(item.content) ? item.content : [])
+    .filter(item => item.type === 'output_text' && typeof item.text === 'string')
+    .map(item => item.text);
+  const output = [typeof data.output_text === 'string' ? data.output_text : '', ...textParts]
+    .filter(Boolean).join('\n').trim();
+
+  if (!output) {
+    const refusal = outputItems.flatMap(item => Array.isArray(item.content) ? item.content : [])
+      .find(item => item.type === 'refusal' && typeof item.refusal === 'string');
+    if (refusal) throw new Error('Model refusal: ' + refusal.refusal.slice(0, 500));
+    const reason = data.incomplete_details?.reason || 'none';
+    const itemTypes = outputItems.map(item => item.type || 'unknown').join(',') || 'none';
+    const contentTypes = outputItems.flatMap(item => Array.isArray(item.content) ? item.content : [])
+      .map(item => item.type || 'unknown').join(',') || 'none';
+    throw new Error('No text in OpenAI response; status=' + (data.status || 'unknown') +
+      '; incomplete_reason=' + reason + '; output_items=' + itemTypes +
+      '; content_items=' + contentTypes + '; input_tokens=' + usage.inputTokens +
+      '; output_tokens=' + usage.outputTokens + '; response_id=' + (data.id || 'unknown'));
+  }
+
+  return { output, ...usage };
 }
 
 async function workflowContext(task) {
