@@ -26,3 +26,9 @@ Template Kantor AI 3D: React + Vite + Three.js. `CLAUDE.md` dan `GEMINI.md` hany
 - Jangan tampilkan nominal uang atau data rahasia di laporan kalau videonya mau dibagikan.
 - Jangan menambah teks atau klaim di layar yang tidak diminta.
 - Bentuk 3D tetap sederhana (box, kapsul, bola; tanpa model; tekstur hanya dari kanvas) supaya ringan di HP.
+
+## LSAI Office (aturan proyek ini)
+- Arsitektur & proses: `README.md`; operasional: `docs/OPERATIONS.md`.
+- **Setiap perubahan proses/fitur wajib memperbarui `README.md`** (bagian Proses kerja, Status fitur, dan Progress log).
+- Kembangkan di branch/worktree + database dev; deploy hanya lewat `bash scripts/deploy.sh <ref>`.
+- Jangan pernah menulis secret ke repo; env ada di `/etc/ls-office/`.
