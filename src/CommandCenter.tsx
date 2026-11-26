@@ -4,7 +4,8 @@ type Employee = { id: string; name: string; role: string; department: string; ma
 type Task = { id: string; title: string; instruction: string; assignee_id: string; reviewer_id: string | null; priority: string; status: string; task_type?: string; artifact_path?: string | null; artifact_name?: string | null; assignee_name?: string; created_at: string };
 type Run = { id: string; status: string; output_text?: string; error_message?: string };
 type WorkflowStep = { id: string; step_order: number; step_key: string; title: string; status: string; requires_approval?: boolean; assignee_name?: string | null; output_text?: string | null };
-type PublicationJob = { platform: string; status: string; post_url?: string | null; error_message?: string | null };\ntype SocialPlatform = { platform: string; configured: boolean; accounts: Array<{ accountId: string; accountName: string; status: string }>; requirements: string[] };
+type PublicationJob = { platform: string; status: string; post_url?: string | null; error_message?: string | null };
+type SocialPlatform = { platform: string; configured: boolean; accounts: Array<{ accountId: string; accountName: string; status: string }>; requirements: string[] };
 type Overview = { counts: Record<string, number>; recent: Array<{ id: number; taskId: string; type: string; createdAt: string; title?: string }> };
 const labels: Record<string, string> = { queued: 'Queued', assigned: 'Assigned', in_progress: 'Working', review: 'Review', completed: 'Completed', failed: 'Failed', blocked: 'Blocked', changes_requested: 'Changes requested', rejected: 'Rejected', cancelled: 'Cancelled' };
 
@@ -25,7 +26,8 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
   const [priority, setPriority] = useState('normal');
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState<{ task: Task; runs: Run[]; workflowSteps: WorkflowStep[]; publicationJobs: PublicationJob[] } | null>(null);
-  const [notes, setNotes] = useState('');\n  const [socialPlatforms, setSocialPlatforms] = useState<SocialPlatform[]>([]);
+  const [notes, setNotes] = useState('');
+  const [socialPlatforms, setSocialPlatforms] = useState<SocialPlatform[]>([]);
 
   const request = useCallback(async (path: string, init: RequestInit = {}) => {
     const r = await fetch('/api' + path, { ...init, credentials: 'same-origin', headers: { 'content-type': 'application/json', ...(init.headers || {}) } });
