@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import http from 'node:http';
 import path from 'node:path';
 import { config } from '../lib/config.mjs';
-import { generateImage, speak, recordSpeech, transcribeWords } from '../lib/ai.mjs';
+import { generateImage, editImage, speak, recordSpeech, transcribeWords } from '../lib/ai.mjs';
 import { isStopped } from '../lib/engine.mjs';
 
 const exec = promisify(execFile);
@@ -119,15 +119,30 @@ export async function produceVideo(job, { pool, signal }) {
   await mkdir(cache, { recursive: true });
   await mkdir(work, { recursive: true });
 
+  // Series: one character sheet per series, used as the reference for every scene of every part.
+  const series = job.series_id ? (await pool.query('SELECT * FROM series WHERE id=$1', [job.series_id])).rows[0] : null;
+  const design = series?.design || {};
+  let sheet = series?.character_sheet || null;
+  if (series && !(sheet && (await exists(sheet)))) {
+    sheet = path.join(config.mediaRoot, 'series', series.id, 'characters.png');
+    await mkdir(path.dirname(sheet), { recursive: true });
+    const who = (design.characters || []).map((c, i) => `(${i + 1}) ${c.name}: ${c.appearance}`).join('; ');
+    await writeFile(sheet + '.tmp', await generateImage({ prompt: `Character reference sheet, full body, front view, characters standing side by side in a row, plain light grey background, even lighting, no text, no labels. Characters: ${who}. Style: ${design.visual_style || board.visual_style}`, size: '1536x1024', ctx }));
+    await rename(sheet + '.tmp', sheet);
+    await pool.query('UPDATE series SET character_sheet=$2,updated_at=now() WHERE id=$1', [series.id, sheet]);
+  }
+
   // 1. Scene images (cached by prompt: a revision that only changes the voice does not pay for images again).
-  const style = [board.visual_style, board.character_bible && board.character_bible !== 'none' ? 'Recurring character (keep identical): ' + board.character_bible : ''].filter(Boolean).join('. ');
+  const bible = series ? (design.characters || []).map((c) => c.name + ': ' + c.appearance).join('; ') : board.character_bible;
+  const style = [series ? design.visual_style : board.visual_style, bible && bible !== 'none' ? 'Recurring characters (keep identical): ' + bible : ''].filter(Boolean).join('. ');
   const images = await pool2(board.scenes, 2, async (scene, i) => {
     if (!scene.image_prompt?.trim()) return null;
-    const prompt = `${scene.image_prompt}. ${style}. Vertical 9:16 cinematic frame for a short video, subject centered with room at the top and bottom for captions. No text, no letters, no watermark, no logo.`;
-    const file = path.join(cache, 'img-' + sha(prompt) + '.png');
+    const prompt = (sheet ? 'Use the EXACT character designs (faces, hijab/hair, clothes, colors, proportions) from the reference character sheet. ' : '') +
+      `${scene.image_prompt}. ${style}. Vertical 9:16 cinematic frame for a short video, subject centered with room at the top and bottom for captions. No text, no letters, no watermark, no logo.`;
+    const file = path.join(cache, 'img-' + sha(prompt + (sheet || '')) + '.png');
     if (!(await exists(file))) {
       if (await isStopped(pool, job.id)) throw new Error('Task dibatalkan');
-      await writeFile(file + '.tmp', await generateImage({ prompt, ctx }));
+      await writeFile(file + '.tmp', sheet ? await editImage({ prompt, refs: [sheet], ctx }) : await generateImage({ prompt, ctx }));
       await rename(file + '.tmp', file);
     }
     const name = 'scene-' + String(i + 1).padStart(2, '0') + '.png';
@@ -167,7 +182,7 @@ export async function produceVideo(job, { pool, signal }) {
     let w;
     try { w = alignWords(scene.narration, await transcribeWords({ file: clips[i].file, ctx }), start); } catch (e) { console.warn('transcribe failed, even timing', e.message); w = evenWords(scene.narration, start, end); }
     words.push(...w);
-    scenes.push({ start, end: i === board.scenes.length - 1 ? end + 0.8 : end + gap, image: images[i], labels: scene.labels || [], card: scene.card });
+    scenes.push({ start, end: i === board.scenes.length - 1 ? end + (series ? 2.4 : 0.8) : end + gap, image: images[i], labels: board.template === 'story' ? [] : scene.labels || [], card: scene.card });
     t = end + gap;
   }
   const total = scenes.at(-1).end;
@@ -185,7 +200,8 @@ export async function produceVideo(job, { pool, signal }) {
   try {
     const inputProps = {
       template: board.template, fps: config.videoFps, width: config.videoWidth, height: config.videoHeight,
-      hookText: board.hook_text || '', audio: base + 'narration.mp3', duration: total,
+      hookText: board.template === 'story' ? '' : board.hook_text || '', audio: base + 'narration.mp3', duration: total,
+      partLabel: job.part_no ? 'PART ' + job.part_no : '', mainName: series?.plan?.characters?.[0]?.name || '', endLabel: series ? (job.part_no < series.total_parts ? 'Bersambung ke Part ' + (job.part_no + 1) : 'Tamat') : '',
       scenes: scenes.map((s) => ({ ...s, image: s.image ? base + s.image : null })), words,
     };
     await writeFile(path.join(work, 'props.json'), JSON.stringify(inputProps));

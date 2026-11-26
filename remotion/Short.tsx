@@ -12,7 +12,9 @@ const HOOK_SECONDS = 2.6;
 
 export const Short: React.FC<ShortProps> = (props) => {
   const { fps } = useVideoConfig();
-  const chunks = useMemo(() => chunkWords(props.words, props.template === 'cards' ? 3 : 2), [props.words, props.template]);
+  const story = props.template === 'story';
+  const chunks = useMemo(() => chunkWords(props.words, props.template === 'explainer' ? 2 : story ? 4 : 3), [props.words, props.template]);
+  const { durationInFrames } = useVideoConfig();
   const hookEnd = props.hookText ? Math.min(HOOK_SECONDS, props.scenes[0]?.end ?? HOOK_SECONDS) : 0;
   const dark = props.template === 'cards';
   return (
@@ -23,7 +25,7 @@ export const Short: React.FC<ShortProps> = (props) => {
         const dur = Math.max(1, Math.round((s.end - s.start) * fps)) + (i < props.scenes.length - 1 ? FADE : 0);
         return (
           <Sequence key={i} from={from} durationInFrames={dur} layout="none">
-            <SceneView scene={s} index={i} total={props.scenes.length} template={props.template} />
+            <SceneView scene={s} index={i} total={props.scenes.length} template={props.template} mainName={props.mainName || ''} />
           </Sequence>
         );
       })}
@@ -37,10 +39,12 @@ export const Short: React.FC<ShortProps> = (props) => {
         const dur = Math.max(2, Math.round(c.end * fps) - from);
         return (
           <Sequence key={i} from={from} durationInFrames={dur} layout="none">
-            <Caption words={c.words} highlight={c.highlight} color={c.color} dark={dark} />
+            {story ? <StoryCaption words={c.words} highlight={c.highlight} /> : <Caption words={c.words} highlight={c.highlight} color={c.color} dark={dark} />}
           </Sequence>
         );
       })}
+      {props.partLabel && <Sequence from={0} durationInFrames={Math.round(fps * 3.5)} layout="none"><PartBadge text={props.partLabel} /></Sequence>}
+      {props.endLabel && <Sequence from={Math.max(0, durationInFrames - Math.round(fps * 2))} layout="none"><EndCard text={props.endLabel} /></Sequence>}
       {props.audio && <Audio src={props.audio} />}
     </AbsoluteFill>
   );
@@ -48,7 +52,7 @@ export const Short: React.FC<ShortProps> = (props) => {
 
 /* ---------------------------------------------------------------- scenes */
 
-const SceneView: React.FC<{ scene: Scene; index: number; total: number; template: ShortProps['template'] }> = ({ scene, index, total, template }) => {
+const SceneView: React.FC<{ scene: Scene; index: number; total: number; template: ShortProps['template']; mainName: string }> = ({ scene, index, total, template, mainName }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const opacity = index === 0 ? 1 : interpolate(frame, [0, FADE], [0, 1], { extrapolateRight: 'clamp' });
@@ -62,7 +66,16 @@ const SceneView: React.FC<{ scene: Scene; index: number; total: number; template
       </AbsoluteFill>
     );
   }
-  // Explainer: slow push-in / drift, alternating direction per scene.
+  if (template === 'story' && (scene.card.kind === 'chat' || scene.card.kind === 'phone')) {
+    return (
+      <AbsoluteFill style={{ opacity }}>
+        {scene.image ? <Img src={scene.image} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(6px) brightness(0.55)', transform: 'scale(1.1)' }} />
+          : <AbsoluteFill style={{ background: 'repeating-linear-gradient(90deg, #c98d4f 0 38px, #bd8247 38px 76px)' }} />}
+        <PhoneView card={scene.card} mainName={mainName} />
+      </AbsoluteFill>
+    );
+  }
+  // Explainer / story: slow push-in / drift, alternating direction per scene.
   const p = frame / Math.max(1, durationInFrames);
   const zoom = 1.06 + 0.1 * Easing.inOut(Easing.ease)(Math.min(1, p));
   const dx = (index % 2 ? -1 : 1) * 18 * p;
@@ -75,8 +88,8 @@ const SceneView: React.FC<{ scene: Scene; index: number; total: number; template
         <AbsoluteFill style={{ background: 'radial-gradient(120% 80% at 50% 30%, #1f4f5e 0%, #0d1b24 70%)' }} />
       )}
       <AbsoluteFill style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 25%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.35) 100%)' }} />
-      {scene.labels.slice(0, 3).map((l, i) => <Pointer key={i} label={l} delay={Math.round(fps * 0.4) + i * 8} />)}
-      {scene.card.kind !== 'none' && (
+      {template !== 'story' && scene.labels.slice(0, 3).map((l, i) => <Pointer key={i} label={l} delay={Math.round(fps * 0.4) + i * 8} />)}
+      {template !== 'story' && scene.card.kind !== 'none' && (
         <div style={{ position: 'absolute', left: 48, right: 48, top: 170 }}>
           <CardView card={scene.card} image={null} compact />
         </div>
@@ -216,3 +229,76 @@ const Counter: React.FC<{ value: string }> = ({ value }) => {
 const FramedImage: React.FC<{ src: string }> = ({ src }) => (
   <div style={{ ...panel, padding: 14 }}><Img src={src} style={{ width: '100%', height: 560, objectFit: 'cover', borderRadius: 14 }} /></div>
 );
+
+/* ---------------------------------------------------------------- story template */
+
+const StoryCaption: React.FC<{ words: string[]; highlight: number }> = ({ words, highlight }) => {
+  const frame = useCurrentFrame();
+  const o = interpolate(frame, [0, 4], [0, 1], { extrapolateRight: 'clamp' });
+  return (
+    <div style={{ position: 'absolute', top: '71%', left: 36, right: 36, textAlign: 'center', opacity: o }}>
+      <span style={{ font: `800 ${Math.min(44, Math.floor(640 / (Math.max(10, words.join(' ').length) * 0.52)))}px/1.2 ${UI}`, color: '#fff', WebkitTextStroke: '6px rgba(0,0,0,0.85)', paintOrder: 'stroke fill', textShadow: '0 3px 10px rgba(0,0,0,0.5)' }}>
+        {words.map((w, i) => <span key={i} style={{ color: i === highlight ? '#FFC93C' : '#fff' }}>{w}{i < words.length - 1 ? ' ' : ''}</span>)}
+      </span>
+    </div>
+  );
+};
+
+const PartBadge: React.FC<{ text: string }> = ({ text }) => {
+  const frame = useCurrentFrame();
+  const { fps, durationInFrames } = useVideoConfig();
+  const s = spring({ frame, fps, config: { damping: 14 } });
+  const out = interpolate(frame, [durationInFrames - 8, durationInFrames], [1, 0], { extrapolateLeft: 'clamp' });
+  return (
+    <div style={{ position: 'absolute', top: 70, right: 40, transform: `scale(${s})`, opacity: out, padding: '10px 22px', borderRadius: 999, background: '#16120c', border: '3px solid #FFC93C', color: '#FFC93C', font: `900 34px ${DISPLAY}`, letterSpacing: 2, boxShadow: '0 8px 24px rgba(0,0,0,0.45)' }}>{text}</div>
+  );
+};
+
+const EndCard: React.FC<{ text: string }> = ({ text }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const s = spring({ frame, fps, config: { damping: 15 } });
+  return (
+    <AbsoluteFill style={{ background: `rgba(10,8,6,${0.72 * s})`, alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ transform: `scale(${0.8 + 0.2 * s})`, opacity: s, textAlign: 'center', color: '#fff', font: `900 58px/1.15 ${DISPLAY}`, textTransform: 'uppercase', padding: '0 50px' }}>
+        <span style={{ color: '#FFC93C' }}>{text.split(' ')[0]}</span> {text.split(' ').slice(1).join(' ')}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+const PhoneView: React.FC<{ card: Card; mainName: string }> = ({ card, mainName }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const s = spring({ frame, fps, config: { damping: 16 } });
+  const isChat = card.kind === 'chat';
+  const msgs = card.items.slice(0, 7).map((m) => { const i = m.indexOf(':'); return i > 0 ? { who: m.slice(0, i).trim(), text: m.slice(i + 1).trim() } : { who: '', text: m }; });
+  return (
+    <div style={{ position: 'absolute', left: 120, right: 120, top: 150, height: 760, transform: `translateY(${(1 - s) * 120}px) rotate(-4deg)`, opacity: s, borderRadius: 46, background: '#111', padding: 16, boxShadow: '0 30px 60px rgba(0,0,0,0.5)' }}>
+      <div style={{ width: '100%', height: '100%', borderRadius: 34, overflow: 'hidden', background: isChat ? '#ece5dd' : '#f4f6fb', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ background: isChat ? '#1f7a5c' : '#1e4fd8', color: '#fff', padding: '22px 22px 16px', font: `700 24px ${UI}` }}>{card.heading || (isChat ? 'Chat' : 'Notifikasi')}</div>
+        {isChat ? (
+          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {msgs.map((m, i) => {
+              const mine = Boolean(m.who) && /^(aku|saya|me)$/i.test(m.who) || (Boolean(mainName) && m.who.toLowerCase() === mainName.toLowerCase());
+              const show = interpolate(frame, [6 + i * 10, 12 + i * 10], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+              return (
+                <div key={i} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '82%', opacity: show, transform: `translateY(${(1 - show) * 12}px)`, background: mine ? '#d9fdd3' : '#fff', borderRadius: 14, padding: '10px 14px', boxShadow: '0 1px 1px rgba(0,0,0,0.12)' }}>
+                  {m.who && <div style={{ font: `700 16px ${UI}`, color: '#1f7a5c', marginBottom: 2 }}>{m.who}</div>}
+                  <div style={{ font: `500 21px/1.3 ${UI}`, color: '#111' }}>{m.text}</div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ padding: 22, display: 'grid', gap: 14 }}>
+            {card.value && <div style={{ font: `800 ${String(card.value).length > 12 ? 44 : 56}px ${UI}`, color: card.value.trim().startsWith('-') ? '#d62c2c' : '#111' }}>{card.value}</div>}
+            {card.items.slice(0, 6).map((it, i) => (
+              <div key={i} style={{ opacity: interpolate(frame, [8 + i * 8, 14 + i * 8], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }), padding: '12px 14px', borderRadius: 12, background: '#fff', font: `500 20px/1.3 ${UI}`, color: '#222', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>{it}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

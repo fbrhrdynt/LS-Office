@@ -1,9 +1,9 @@
 import { tx } from './db.mjs';
 import { config } from './config.mjs';
 import { respond } from './ai.mjs';
-import { WORKFLOWS, COORDINATOR, GATE_LABEL, stepDef } from '../workflows.mjs';
+import { WORKFLOWS, COORDINATOR, GATE_LABEL, stepDef, STORY_EPISODE_WORKFLOW } from '../workflows.mjs';
 
-export const TASK_TYPES = ['text', 'animated_video', 'web_build', 'web_update'];
+export const TASK_TYPES = ['text', 'animated_video', 'web_build', 'web_update', 'story_series', 'story_episode'];
 const PRIORITY_ORDER = "CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END";
 const FINAL = ['completed', 'rejected', 'cancelled'];
 
@@ -120,6 +120,7 @@ export async function complete(pool, job, { text = '', json = null, artifact = n
       await notify(c, { taskId: job.id, employeeId: job.step_assignee, kind: 'approval', title: GATE_LABEL[gate] + ': ' + job.title, body: summarizeForDirector(gate, text, json), action: { gate, stepKey: job.step_key } });
       return true;
     }
+    if (job.task_type === 'story_series' && job.step_key === 'character_design') await createSeriesFromTask(c, job.id);
     const pending = await c.query("SELECT count(*)::int AS n FROM workflow_steps WHERE task_id=$1 AND status NOT IN ('completed','skipped')", [job.id]);
     if (pending.rows[0].n === 0) {
       await c.query("UPDATE tasks SET status='completed',updated_at=now() WHERE id=$1", [job.id]);
@@ -160,6 +161,42 @@ export async function reapInterrupted(pool, executors) {
   });
 }
 
+/* ------------------------------------------------------------------ story series */
+
+/** Creates the task for one part of a series (inside a transaction). Returns null if that part already exists. */
+export async function createEpisodeTask(c, series, part) {
+  const ep = (series.plan?.episodes || []).find((e) => Number(e.part) === part) || series.plan?.episodes?.[part - 1];
+  if (!ep) return null;
+  const exists = await c.query("SELECT id FROM tasks WHERE series_id=$1 AND part_no=$2 AND status NOT IN ('cancelled','rejected')", [series.id, part]);
+  if (exists.rowCount) return null;
+  const origin = series.origin_task_id ? (await c.query('SELECT meta,priority FROM tasks WHERE id=$1', [series.origin_task_id])).rows[0] : null;
+  const meta = { ...(origin?.meta || {}), source: 'series' };
+  const t = await c.query(
+    "INSERT INTO tasks(title,instruction,acceptance_criteria,assignee_id,reviewer_id,priority,status,task_type,meta,series_id,part_no) VALUES($1,$2,$3,'ethan','alex',$4,'queued','story_episode',$5,$6,$7) RETURNING *",
+    [(series.title + ' — Part ' + part + ': ' + ep.title).slice(0, 160), 'Part ' + part + ' dari ' + series.total_parts + '. ' + ep.summary + '\nCliffhanger/penutup: ' + ep.cliffhanger, 'Durasi 1,5-2 menit, tokoh konsisten dengan character sheet seri, ditutup cliffhanger.', origin?.priority || 'normal', JSON.stringify(meta), series.id, part]
+  );
+  for (const [i, st] of STORY_EPISODE_WORKFLOW.entries()) {
+    await c.query('INSERT INTO workflow_steps(task_id,step_order,step_key,assignee_id,title,instruction,requires_approval,executor) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [t.rows[0].id, i + 1, st.key, st.employeeId, st.title, st.instruction, Boolean(st.gate), st.executor]);
+  }
+  await event(c, t.rows[0].id, 'task_created', { taskType: 'story_episode', seriesId: series.id, part });
+  await notify(c, { taskId: t.rows[0].id, employeeId: 'felix', kind: 'info', title: 'Part ' + part + ' mulai diproduksi: ' + series.title, body: ep.title + ' — ' + ep.summary });
+  return t.rows[0];
+}
+
+/** After Ethan finishes the character design, the series exists and Part 1 starts. */
+async function createSeriesFromTask(c, taskId) {
+  const steps = Object.fromEntries((await c.query('SELECT step_key,output_json FROM workflow_steps WHERE task_id=$1', [taskId])).rows.map((r) => [r.step_key, r.output_json]));
+  const task = (await c.query('SELECT meta FROM tasks WHERE id=$1', [taskId])).rows[0];
+  const plan = steps.series_plan || {};
+  const s = await c.query(
+    'INSERT INTO series(origin_task_id,title,logline,plan,design,total_parts,platforms) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+    [taskId, plan.title || 'Seri baru', plan.logline || '', JSON.stringify(plan), JSON.stringify(steps.character_design || {}), Math.max(1, Math.min(30, plan.episodes?.length || 1)), task?.meta?.platforms || []]
+  );
+  await c.query('UPDATE tasks SET series_id=$2 WHERE id=$1', [taskId, s.rows[0].id]);
+  await createEpisodeTask(c, s.rows[0], 1);
+  return s.rows[0];
+}
+
 /* ------------------------------------------------------------------ context for agents */
 
 export async function workContext(pool, job) {
@@ -171,6 +208,23 @@ export async function workContext(pool, job) {
   if (job.project_id) {
     const p = await pool.query('SELECT name,slug,repo_url,default_branch,notes FROM dev_projects WHERE id=$1', [job.project_id]);
     if (p.rowCount) parts.push('Proyek: ' + p.rows[0].name + ' (' + p.rows[0].slug + ')' + (p.rows[0].notes ? '\nCatatan proyek: ' + p.rows[0].notes : ''));
+  }
+  if (job.series_id && job.task_type === 'story_episode') {
+    const sr = (await pool.query('SELECT * FROM series WHERE id=$1', [job.series_id])).rows[0];
+    if (sr) {
+      const ep = (sr.plan.episodes || []).find((e) => Number(e.part) === job.part_no);
+      parts.push('### SERI: ' + sr.title + ' (Part ' + job.part_no + ' dari ' + sr.total_parts + ')\nLogline: ' + sr.logline + '\nTone: ' + (sr.plan.tone || '-') +
+        '\nTokoh: ' + JSON.stringify(sr.plan.characters || []) + '\nDesain visual: ' + JSON.stringify(sr.design || {}) +
+        '\nRencana semua part: ' + (sr.plan.episodes || []).map((e) => 'Part ' + e.part + ' ' + e.title + ': ' + e.summary + ' [akhir: ' + e.cliffhanger + ']').join(' | '));
+      if (ep) parts.push('### PART INI (' + job.part_no + '): ' + ep.title + '\n' + ep.summary + '\nAkhir part: ' + ep.cliffhanger + (job.part_no >= sr.total_parts ? '\nIni PART TERAKHIR: beri penyelesaian, bukan cliffhanger.' : ''));
+      const prevParts = await pool.query(
+        "SELECT t.part_no,s.output_json FROM tasks t JOIN workflow_steps s ON s.task_id=t.id AND s.step_key='script' AND s.status='completed' WHERE t.series_id=$1 AND t.part_no<$2 AND t.status NOT IN ('cancelled','rejected') ORDER BY t.part_no DESC LIMIT 3",
+        [job.series_id, job.part_no]
+      );
+      for (const pp of prevParts.rows.reverse()) parts.push('### Yang sudah terjadi di Part ' + pp.part_no + ' (naskah final)\n' + (pp.output_json?.scenes || []).map((x) => x.spoken).join(' ').slice(0, 1800));
+      const voice = await pool.query("SELECT s.output_json FROM tasks t JOIN workflow_steps s ON s.task_id=t.id AND s.step_key='audio_direction' AND s.status='completed' WHERE t.series_id=$1 AND t.part_no<$2 ORDER BY t.part_no DESC LIMIT 1", [job.series_id, job.part_no]);
+      if (voice.rowCount) parts.push('### Suara narator part sebelumnya (pertahankan): ' + JSON.stringify(voice.rows[0].output_json));
+    }
   }
   if (job.workflow) {
     const prev = await pool.query("SELECT step_key,title,output_text,output_json,decision FROM workflow_steps WHERE task_id=$1 AND status='completed' AND step_order < (SELECT step_order FROM workflow_steps WHERE id=$2) ORDER BY step_order", [job.id, job.step_id]);
@@ -277,6 +331,13 @@ export async function decide(pool, taskId, decision, opts = {}) {
         await createPublicationJobs(c, task, plan);
         d.publish = plan;
         result.publication = plan;
+        if (task.task_type === 'story_episode' && task.series_id) {
+          const series = (await c.query("SELECT * FROM series WHERE id=$1 AND status='active'", [task.series_id])).rows[0];
+          if (series && task.part_no < series.total_parts) {
+            const next = await createEpisodeTask(c, series, task.part_no + 1);
+            if (next) result.nextPart = task.part_no + 1;
+          } else if (series) await c.query("UPDATE series SET status='finished',updated_at=now() WHERE id=$1", [series.id]);
+        }
       }
       await c.query("UPDATE workflow_steps SET status='completed',decision=$2,finished_at=COALESCE(finished_at,now()) WHERE id=$1", [gateStep?.id, JSON.stringify(d)]).catch(() => {});
       if (!gateStep) status = 'completed';

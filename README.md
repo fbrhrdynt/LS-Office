@@ -5,7 +5,7 @@ kamu memutuskan di titik penting, lalu hasilnya terbit (video ke media sosial, w
 
 - **Production:** https://office.febro.id
 - **Repository:** https://github.com/fbrhrdynt/LS-Office
-- **Versi:** 0.4.0
+- **Versi:** 0.5.0
 - **Bahasa kerja:** Indonesia
 - Detail operasional (service, env, Telegram, OAuth, backup, deploy): [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
 
@@ -20,7 +20,7 @@ Buka https://office.febro.id → **⌘ Command Center** → login. Atau lewat **
 | **Keputusan** | semua yang menunggu kamu: pilih ide, review video, setujui caption & jadwal, setujui rencana web, review preview |
 | **Pekerjaan** | `+ Perintah baru` (Video pendek / Website baru / Update website / Tugas teks), daftar task + progres + biaya |
 | **Chat** | chat dengan Alex atau karyawan mana pun; minta pekerjaan lewat chat → jawab "ya" → jadi task |
-| **Studio** | hubungkan akun TikTok/IG/FB/YouTube, jadwal posting, daftar proyek web |
+| **Studio** | seri cerita (progres per part, jeda/lanjut, produksi part berikutnya), akun sosial, jadwal posting, proyek web |
 | **Pengaturan** | hubungkan Telegram, biaya AI harian (estimasi) |
 
 Kantor 3D menampilkan status asli: ⌨️ mengetik = sedang mengerjakan tahapnya, 🙋 angkat tangan = menunggu keputusanmu,
@@ -40,6 +40,21 @@ Nadia riset + 3-5 ide ──▶ [KAMU pilih ide]
   ▶ Olivier caption + hashtag + jadwal (+ CTA affiliate hanya jika kamu isi produk affiliate)
   ──▶ [KAMU setujui / ubah caption & waktu]  ▶ Publisher memposting tepat waktu
 ```
+
+### Cerita bersambung (Part 1, 2, 3 …)
+Format drama sehari-hari 1,5–2 menit per part: tokoh kartun 3D yang sama di semua part, layar HP (chat WA / saldo),
+caption bawah dengan kata kunci kuning, badge "PART N", penutup "Bersambung ke Part N+1".
+```
+Nadia riset tema + 3-5 ide seri (arc per part) ──▶ [KAMU pilih]
+  ▶ Felix rancangan seri: tokoh + daftar part + cliffhanger tiap part ──▶ [KAMU setujui]
+  ▶ Ethan desain tokoh & lokasi ─▶ seri tercipta, Part 1 otomatis masuk produksi
+Setiap part:
+  Felix naskah (ingat part sebelumnya, ditutup cliffhanger) ▶ Ethan storyboard ▶ Maya suara (sama tiap part)
+  ▶ engine: character sheet seri (dibuat sekali) dipakai sebagai referensi SETIAP gambar → tokoh konsisten
+  ▶ Daren QA ──▶ [KAMU review video / revisi] ▶ Olivier caption "Part N" + jadwal ──▶ [KAMU setujui posting]
+  ▶ saat kamu setujui posting Part N, Part N+1 otomatis mulai diproduksi (bisa dijeda di Studio → Seri cerita)
+```
+Mulai dari Command Center → `+ Perintah baru` → **🎞️ Cerita bersambung**, Telegram `/cerita <brief>`, atau chat ke Alex.
 
 ### Website baru / update website
 ```
@@ -67,7 +82,7 @@ Arvin rencana teknis ──▶ [KAMU setujui]
 | Tim Web Dev (Claude Code) | ✅ diuji di dev; production perlu token Claude di `/etc/ls-office/devagent.env` |
 | Bot Telegram | ⏳ siap, perlu `TELEGRAM_BOT_TOKEN` |
 | Posting TikTok / IG / FB / YouTube | ⏳ siap, perlu developer app + akun terhubung; belum diuji dengan akun asli |
-| Video cerita bersambung (Part 1, 2, 3…) | 🚧 sedang dibangun |
+| Video cerita bersambung (Part 1, 2, 3…) dengan tokoh konsisten | ✅ berjalan (±$1–1.5 per part, render ±5–8 menit) |
 
 ## 4. Developer guide
 
@@ -97,6 +112,7 @@ Aturan kerja: kembangkan di branch/worktree terpisah dan database dev (salinan d
 
 | Tanggal | Perubahan |
 |---|---|
+| 2026-11-27 | Cerita bersambung: alur seri (ide Nadia → rancangan Felix → desain tokoh Ethan), episode otomatis per part, character sheet sebagai referensi gambar (tokoh konsisten), template Remotion "story" (badge PART, layar chat/saldo, caption bawah, "Bersambung"), tab Studio → Seri cerita, Telegram `/cerita`. |
 | 2026-11-27 | Operations v2 di production: workflow video baru (pilih ide → review video → revisi bertarget → caption & jadwal), Remotion + FFmpeg, publisher terjadwal, bot Telegram, chat, tim Web Dev (Claude Code), kantor 3D berbasis status nyata, Command Center baru, migrasi bernomor, service render terpisah, backup harian, swap 2 GB, rate limit login. |
 | 2026-11-26 | Fondasi OAuth sosial, perbaikan approval Command Center, audit teknis menyeluruh. |
 

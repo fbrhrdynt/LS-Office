@@ -5,8 +5,8 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './lib/config.mjs';
 import { signMedia } from './lib/media.mjs';
-import { createPool, migrate, getSetting, setSetting, todayUsage } from './lib/db.mjs';
-import { createTask, decide, retry, cancel, officeState } from './lib/engine.mjs';
+import { createPool, migrate, getSetting, setSetting, todayUsage, tx } from './lib/db.mjs';
+import { createTask, decide, retry, cancel, officeState, createEpisodeTask } from './lib/engine.mjs';
 import { buildAuthorizationUrl, completeOAuth, oauthConfiguration } from './social-oauth.mjs';
 import PERSONNEL from '../shared/personnel.json' with { type: 'json' };
 
@@ -191,6 +191,29 @@ const server = http.createServer(async (req, res) => {
     }
     if (m && m[2] === 'retry' && method === 'POST') return json(res, 200, await retry(pool, m[1]));
     if (m && m[2] === 'cancel' && method === 'POST') return json(res, 200, await cancel(pool, m[1]));
+
+    /* story series */
+    if (route === '/api/series' && method === 'GET') {
+      const q = await pool.query(`SELECT s.id,s.title,s.logline,s.total_parts,s.status,s.created_at,
+          COALESCE((SELECT json_agg(json_build_object('id',t.id,'part',t.part_no,'title',t.title,'status',t.status) ORDER BY t.part_no) FROM tasks t WHERE t.series_id=s.id AND t.task_type='story_episode' AND t.status NOT IN ('cancelled','rejected')),'[]') AS parts
+        FROM series s ORDER BY s.created_at DESC LIMIT 30`);
+      return json(res, 200, { series: q.rows });
+    }
+    const sr = route.match(new RegExp(`^/api/series/(${UUID})/(next|pause|resume)$`));
+    if (sr && method === 'POST') {
+      if (sr[2] !== 'next') {
+        await pool.query('UPDATE series SET status=$2,updated_at=now() WHERE id=$1', [sr[1], sr[2] === 'pause' ? 'paused' : 'active']);
+        return json(res, 200, { ok: true });
+      }
+      const out = await tx(pool, async (c) => {
+        const s = (await c.query('SELECT * FROM series WHERE id=$1 FOR UPDATE', [sr[1]])).rows[0];
+        if (!s) throw Object.assign(new Error('Seri tidak ditemukan'), { status: 404 });
+        const last = (await c.query("SELECT COALESCE(max(part_no),0)::int AS n FROM tasks WHERE series_id=$1 AND task_type='story_episode' AND status NOT IN ('cancelled','rejected')", [s.id])).rows[0].n;
+        if (last >= s.total_parts) throw Object.assign(new Error('Semua part sudah dibuat'), { status: 409 });
+        return createEpisodeTask(c, s, last + 1);
+      });
+      return json(res, 200, { ok: true, task: out });
+    }
 
     /* publications */
     const pj = route.match(new RegExp(`^/api/publications/(${UUID})/(retry|cancel|now)$`));

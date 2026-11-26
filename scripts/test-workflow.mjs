@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { runnerImport } from 'vite';
-import { VIDEO_WORKFLOW, WEB_BUILD_WORKFLOW, WEB_UPDATE_WORKFLOW, SCHEMAS, stepDef } from '../server/workflows.mjs';
+import { VIDEO_WORKFLOW, WEB_BUILD_WORKFLOW, WEB_UPDATE_WORKFLOW, STORY_SERIES_WORKFLOW, STORY_EPISODE_WORKFLOW, SCHEMAS, stepDef } from '../server/workflows.mjs';
 import { buildPublishPlan, parseLocal } from '../server/lib/engine.mjs';
 import { cleanNarration, alignWords, spokenText, evenWords } from '../server/video/produce.mjs';
 import { formatOutput } from '../server/lib/format.mjs';
@@ -19,6 +19,13 @@ t('video: each role does its own step, gates where the Director decides', () => 
   ]);
   assert.deepEqual(VIDEO_WORKFLOW.filter((s) => s.gate).map((s) => s.gate), ['choose_idea', 'video_review', 'publish']);
   assert.deepEqual(stepDef('animated_video', 'qa_video').revisable, ['script', 'storyboard', 'audio_direction', 'render_video']);
+});
+t('story series: Nadia ideas, Director approves the plan, every part reviewed and approved for posting', () => {
+  assert.deepEqual(STORY_SERIES_WORKFLOW.map((s) => [s.key, s.employeeId, s.gate || null]), [['ideas', 'nadia', 'choose_idea'], ['series_plan', 'felix', 'approve_series'], ['character_design', 'ethan', null]]);
+  assert.deepEqual(STORY_EPISODE_WORKFLOW.map((s) => s.key), ['script', 'storyboard', 'audio_direction', 'render_video', 'qa_video', 'distribution']);
+  assert.deepEqual(STORY_EPISODE_WORKFLOW.filter((s) => s.gate).map((s) => s.gate), ['video_review', 'publish']);
+  assert.match(STORY_EPISODE_WORKFLOW[0].instruction, /cliffhanger/);
+  assert.ok(SCHEMAS.STORYBOARD_SCHEMA.properties.template.enum.includes('story'));
 });
 t('web: plan approved before code, review before release, code only by devagent', () => {
   for (const wf of [WEB_BUILD_WORKFLOW, WEB_UPDATE_WORKFLOW]) {

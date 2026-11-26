@@ -2,7 +2,7 @@
 export function formatOutput(key, j) {
   if (key === 'ideas') {
     return j.ideas.map((x, i) => [
-      `IDE ${i + 1} · ${x.title} [${x.format === 'cards' ? 'motion cards' : 'explainer'}]`,
+      `IDE ${i + 1} · ${x.title} [${x.format === 'cards' ? 'motion cards' : x.format === 'story' ? 'cerita bersambung' : 'explainer'}]`,
       `Hook: ${x.hook}`,
       `Angle: ${x.angle}`,
       `Kenapa jalan: ${x.why_it_works}`,
@@ -10,6 +10,12 @@ export function formatOutput(key, j) {
       x.sources.length ? 'Sumber:\n' + x.sources.map((s) => `  - ${s.title} — ${s.url}`).join('\n') : 'Sumber: -',
       `Affiliate: ${x.affiliate_fit}`,
     ].filter(Boolean).join('\n')).join('\n\n') + `\n\nREKOMENDASI NADIA: ${j.recommendation}`;
+  }
+  if (key === 'series_plan') {
+    return [`${j.title}`, j.logline, `Tone: ${j.tone}`, '', 'TOKOH:', ...j.characters.map((c) => `• ${c.name} — ${c.role}. ${c.personality}. Arc: ${c.arc}`), '', 'PART:', ...j.episodes.map((e) => `Part ${e.part}: ${e.title}\n  ${e.summary}\n  Akhir: ${e.cliffhanger}`)].join('\n');
+  }
+  if (key === 'character_design') {
+    return [`Gaya: ${j.visual_style}`, '', ...j.characters.map((c) => `• ${c.name}: ${c.appearance}`), '', 'Lokasi:', ...j.locations.map((l) => `• ${l.name}: ${l.description}`)].join('\n');
   }
   if (key === 'script') {
     return [`${j.title} · ${j.word_count} kata`, `Hook: ${j.hook_line}`, '', ...j.scenes.map((x, i) => `Adegan ${i + 1}: ${x.spoken}\n  (visual: ${x.visual_note})`)].join('\n');

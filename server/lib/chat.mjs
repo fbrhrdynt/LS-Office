@@ -13,7 +13,7 @@ const PROPOSAL_SCHEMA = {
       type: 'object', additionalProperties: false, required: ['create', 'task_type', 'assignee', 'title', 'instruction', 'project_slug'],
       properties: {
         create: { type: 'boolean', description: 'true hanya jika Director jelas meminta pekerjaan baru dikerjakan' },
-        task_type: { type: 'string', enum: ['text', 'animated_video', 'web_build', 'web_update'] },
+        task_type: { type: 'string', enum: ['text', 'animated_video', 'story_series', 'web_build', 'web_update'] },
         assignee: { type: 'string', enum: PERSONNEL.filter((p) => p.key !== 'alex').map((p) => p.key) },
         title: { type: 'string' },
         instruction: { type: 'string' },
@@ -62,7 +62,7 @@ export async function answerNextMessage(pool) {
       const history = await pool.query('SELECT sender,body FROM messages WHERE thread=$1 AND id<$2 ORDER BY id DESC LIMIT 12', [msg.thread, msg.id]);
       const convo = history.rows.reverse().map((m) => (m.sender === 'director' ? 'Director' : who.name) + ': ' + m.body).join('\n');
       const r = await respond({
-        system: who.prompt + '\nKamu sedang chat langsung dengan Director (atasan manusia) lewat ' + (msg.channel === 'telegram' ? 'Telegram' : 'aplikasi kantor') + '. Jawab santai, jujur, dan singkat. Gunakan hanya data status yang diberikan; jangan mengarang progres. Jika Director meminta pekerjaan baru, isi proposal (create=true) dan di reply tanyakan konfirmasi singkat ("Mau langsung aku buatkan task-nya?"). Video pendek/TikTok/Reels = animated_video (alurnya otomatis: Nadia ide → Felix naskah → Ethan visual → Maya suara → render → review Director → Olivier caption & jadwal); website baru = web_build (Nadia konsep → Arvin rencana → Nathan coding → Daren QA); ubah website yang sudah ada = web_update; selain itu text dengan assignee yang paling cocok. Sebut task dengan judulnya, jangan menyebut ID.',
+        system: who.prompt + '\nKamu sedang chat langsung dengan Director (atasan manusia) lewat ' + (msg.channel === 'telegram' ? 'Telegram' : 'aplikasi kantor') + '. Jawab santai, jujur, dan singkat. Gunakan hanya data status yang diberikan; jangan mengarang progres. Jika Director meminta pekerjaan baru, isi proposal (create=true) dan di reply tanyakan konfirmasi singkat ("Mau langsung aku buatkan task-nya?"). Cerita/drama bersambung (part 1, 2, 3) = story_series (Nadia ide seri → Felix rancang part → Ethan desain tokoh → produksi per part); video pendek sekali tayang/TikTok/Reels = animated_video (alurnya otomatis: Nadia ide → Felix naskah → Ethan visual → Maya suara → render → review Director → Olivier caption & jadwal); website baru = web_build (Nadia konsep → Arvin rencana → Nathan coding → Daren QA); ubah website yang sudah ada = web_update; selain itu text dengan assignee yang paling cocok. Sebut task dengan judulnya, jangan menyebut ID.',
         user: (await snapshot(pool, who.key)) + '\n\nPercakapan sebelumnya:\n' + (convo || '-') + '\n\nPesan baru Director: ' + msg.body,
         schema: PROPOSAL_SCHEMA, schemaName: 'chat_reply', maxOutputTokens: 3000, ctx: { pool, taskId: msg.task_id, stepKey: 'chat' },
       });

@@ -53,20 +53,25 @@ const words = (s) => String(s || '').split(/\s+/).filter(Boolean).length;
 async function validate(pool, job, json) {
   const key = job.step_key;
   if (key === 'ideas' && !(json.ideas?.length >= 2)) return 'Berikan 3-5 ide, bukan ' + (json.ideas?.length || 0);
+  if (key === 'series_plan' && !(json.episodes?.length >= 2 && json.episodes.length <= 30)) return 'Rancangan seri butuh 2-30 part';
+  if (key === 'character_design' && !json.characters?.length) return 'Desain minimal satu tokoh';
   if (key === 'script') {
     const total = json.scenes.reduce((n, x) => n + words(x.spoken), 0);
     const bad = json.scenes.map((x, i) => (hasCues(x.spoken) || /[()[\]]/.test(x.spoken) ? i + 1 : 0)).filter(Boolean);
     if (bad.length) return 'Adegan ' + bad.join(', ') + ' masih berisi arahan/label/tanda kurung di field spoken. Pindahkan ke visual_note.';
-    if (total < 80 || total > 150) return 'Total kata yang diucapkan ' + total + '; harus 95-135 supaya video 45-60 detik.';
-    if (json.scenes.length < 3) return 'Minimal 4 adegan.';
+    const story = job.task_type === 'story_episode';
+    const [lo, hi, label] = story ? [165, 290, '180-260 supaya part 1,5-2 menit'] : [80, 150, '95-135 supaya video 45-60 detik'];
+    if (total < lo || total > hi) return 'Total kata yang diucapkan ' + total + '; harus ' + label + '.';
+    if (json.scenes.length < (story ? 6 : 3)) return 'Adegan terlalu sedikit.';
   }
   if (key === 'storyboard') {
-    if (!(json.scenes?.length >= 3 && json.scenes.length <= 12)) return 'Storyboard harus 4-10 adegan';
+    if (!(json.scenes?.length >= 3 && json.scenes.length <= 18)) return 'Storyboard harus 4-16 adegan';
     const bad = json.scenes.map((x, i) => (hasCues(x.narration) || /[()[\]]/.test(x.narration) ? i + 1 : 0)).filter(Boolean);
     if (bad.length) return 'Narasi adegan ' + bad.join(', ') + ' berisi arahan/label. Narasi hanya kata yang diucapkan.';
     for (const [i, x] of json.scenes.entries()) {
       if (!x.narration.trim()) return 'Adegan ' + (i + 1) + ' tidak punya narasi';
-      if (json.template === 'explainer' && x.image_prompt.trim().length < 20 && x.card.kind === 'none') return 'Adegan ' + (i + 1) + ' tidak punya visual';
+      if (json.template !== 'cards' && x.image_prompt.trim().length < 20 && x.card.kind === 'none') return 'Adegan ' + (i + 1) + ' tidak punya visual';
+      if (job.task_type === 'story_episode' && json.template !== 'story') return 'Episode seri wajib memakai template story';
     }
     if (words(json.hook_text) > 12) return 'hook_text maksimal 10 kata';
     const script = (await pool.query("SELECT output_json FROM workflow_steps WHERE task_id=$1 AND step_key='script'", [job.id])).rows[0]?.output_json;

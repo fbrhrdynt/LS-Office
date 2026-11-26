@@ -90,3 +90,29 @@ export function Settings() {
     </div>
   );
 }
+
+type SeriesRow = { id: string; title: string; logline: string; total_parts: number; status: string; parts: { id: string; part: number; title: string; status: string }[] };
+export function SeriesList({ onOpen }: { onOpen: (id: string) => void }) {
+  const [rows, setRows] = useState<SeriesRow[]>([]);
+  const [error, setError] = useState('');
+  const load = useCallback(async () => { setRows((await api<{ series: SeriesRow[] }>('/series')).series); }, []);
+  useEffect(() => { void load(); const t = window.setInterval(() => void load(), 6000); return () => window.clearInterval(t); }, [load]);
+  if (!rows.length) return null;
+  const act = (id: string, a: string) => api('/series/' + id + '/' + a, { json: {} }).then(load).catch((e) => setError((e as Error).message));
+  return (
+    <section className="lc-section"><h4>Seri cerita</h4>
+      {error && <p className="lc-error">{error}</p>}
+      {rows.map((s) => (
+        <div key={s.id} className="lc-card">
+          <div className="lc-row between"><b>🎞️ {s.title}</b><span className="lc-chip sm" data-s={s.status === 'active' ? 'in_progress' : s.status === 'finished' ? 'completed' : 'pending'}>{s.status === 'active' ? 'Berjalan' : s.status === 'finished' ? 'Tamat' : 'Dijeda'}</span></div>
+          <p className="lc-muted">{s.logline}</p>
+          <div className="lc-parts">{Array.from({ length: s.total_parts }, (_, i) => { const p = s.parts.find((x) => x.part === i + 1); return <button key={i} className="sm" data-s={p?.status || 'none'} disabled={!p} onClick={() => p && onOpen(p.id)} title={p?.title}>Part {i + 1}{p ? ' · ' + (STATUS_LABEL[p.status] || p.status) : ''}</button>; })}</div>
+          <div className="lc-row">
+            {s.status === 'active' && s.parts.length < s.total_parts && <button className="sm" onClick={() => void act(s.id, 'next')}>+ Produksi part berikutnya sekarang</button>}
+            {s.status === 'active' ? <button className="sm" onClick={() => void act(s.id, 'pause')}>Jeda seri</button> : s.status === 'paused' && <button className="sm" onClick={() => void act(s.id, 'resume')}>Lanjutkan seri</button>}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}

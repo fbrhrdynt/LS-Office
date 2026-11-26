@@ -127,13 +127,13 @@ async function main() {
         return send(chat.id, '✏️ Revisi dikirim' + (r.restartFrom ? ', diulang dari tahap ' + r.restartFrom + (r.routeReason ? ' (' + r.routeReason + ')' : '') : '') + '. Nanti aku kabari hasil barunya.');
       } catch (e) { return send(chat.id, '⚠️ ' + e.message); }
     }
-    if (/^\/(start|help)\b/.test(text)) return send(chat.id, 'Perintah:\n/status — siapa sedang apa\n/video <brief> — minta tim creative bikin video\n/web <brief> — minta tim web bikin website baru\n/tugas <@nama> <instruksi> — tugas teks ke karyawan\n\nChat biasa diteruskan ke Alex. Awali dengan @nama untuk chat ke karyawan tertentu, mis. "@nadia ada ide konten hari ini?"');
+    if (/^\/(start|help)\b/.test(text)) return send(chat.id, 'Perintah:\n/status — siapa sedang apa\n/video <brief> — minta tim creative bikin video\n/cerita <brief> — minta tim bikin cerita bersambung (Part 1, 2, 3…)\n/web <brief> — minta tim web bikin website baru\n/tugas <@nama> <instruksi> — tugas teks ke karyawan\n\nChat biasa diteruskan ke Alex. Awali dengan @nama untuk chat ke karyawan tertentu, mis. "@nadia ada ide konten hari ini?"');
     if (/^\/status\b/.test(text)) return send(chat.id, await statusText());
-    const cmd = /^\/(video|web)\s+([\s\S]+)/.exec(text);
+    const cmd = /^\/(video|web|cerita)\s+([\s\S]+)/.exec(text);
     if (cmd) {
       const brief = cmd[2].trim();
-      const task = await createTask(pool, { taskType: cmd[1] === 'video' ? 'animated_video' : 'web_build', title: brief.split(/[.\n]/)[0].slice(0, 120), instruction: brief, source: 'telegram' });
-      return send(chat.id, (cmd[1] === 'video' ? '🎬 Siap! Nadia mulai cari ide untuk: ' : '🧑‍💻 Siap! Nadia mulai cari konsep untuk: ') + task.title);
+      const task = await createTask(pool, { taskType: cmd[1] === 'video' ? 'animated_video' : cmd[1] === 'cerita' ? 'story_series' : 'web_build', title: brief.split(/[.\n]/)[0].slice(0, 120), instruction: brief, source: 'telegram' });
+      return send(chat.id, (cmd[1] === 'video' ? '🎬 Siap! Nadia mulai cari ide untuk: ' : cmd[1] === 'cerita' ? '🎞️ Siap! Nadia mulai cari ide cerita bersambung: ' : '🧑‍💻 Siap! Nadia mulai cari konsep untuk: ') + task.title);
     }
     const tugas = /^\/tugas\s+@?([a-z]+)\s+([\s\S]+)/i.exec(text);
     if (tugas) {

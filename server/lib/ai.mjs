@@ -72,6 +72,23 @@ export async function generateImage({ prompt, size = '1024x1536', quality = conf
   return Buffer.from(encoded, 'base64');
 }
 
+/** Image guided by reference images (e.g. a series character sheet) so characters stay identical across scenes. */
+export async function editImage({ prompt, refs, size = '1024x1536', quality = config.imageQuality, ctx = null }) {
+  const form = new FormData();
+  form.append('model', config.imageModel);
+  form.append('prompt', prompt);
+  form.append('size', size);
+  form.append('quality', quality);
+  for (const ref of refs) form.append('image[]', new Blob([await readFile(ref)], { type: 'image/png' }), path.basename(ref));
+  const response = await fetch(API + '/images/edits', { method: 'POST', signal: AbortSignal.timeout(300000), headers: authHeaders(), body: form });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data) throw new Error('Image edit failed: ' + (data?.error?.message || 'HTTP ' + response.status));
+  const encoded = data.data?.[0]?.b64_json;
+  if (!encoded) throw new Error('Image edit returned no image');
+  await record(ctx, 'image', config.imageModel, { size, quality, reference: refs.length }, (PRICES.image[quality] ?? PRICES.image.medium) * 1.2);
+  return Buffer.from(encoded, 'base64');
+}
+
 /** Text-to-speech; returns MP3 bytes. `instructions` (voice direction) is supported by gpt-4o-*-tts models only. */
 export async function speak({ input, voice = 'alloy', instructions = '', ctx = null }) {
   const body = { model: config.ttsModel, voice, input: input.slice(0, 4000), response_format: 'mp3' };

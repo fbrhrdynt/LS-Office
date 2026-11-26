@@ -1,9 +1,12 @@
 export type Word = { text: string; start: number; end: number };
 export type Label = { text: string; x: number; y: number };
-export type Card = { kind: 'none' | 'list' | 'stat' | 'compare' | 'steps' | 'quote'; heading: string; items: string[]; value: string; highlight: number };
+export type Card = { kind: 'none' | 'list' | 'stat' | 'compare' | 'steps' | 'quote' | 'chat' | 'phone'; heading: string; items: string[]; value: string; highlight: number };
 export type Scene = { start: number; end: number; image: string | null; labels: Label[]; card: Card };
 export type ShortProps = {
-  template: 'explainer' | 'cards';
+  template: 'explainer' | 'cards' | 'story';
+  partLabel?: string;
+  endLabel?: string;
+  mainName?: string;
   fps: number;
   width: number;
   height: number;

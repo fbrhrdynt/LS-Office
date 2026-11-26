@@ -44,9 +44,10 @@ export default function TaskView({ id, onClose, onChanged }: { id: string; onClo
         {gate === 'video_review' && <VideoReview id={id} step={gateStep!} busy={busy} onApprove={() => decide('approved', {}, 'Video disetujui. Olivier menyiapkan caption & jadwal.')} />}
         {gate === 'publish' && gateStep && <PublishPlan step={gateStep} meta={task.meta} busy={busy} onApprove={(x) => decide('approved', x, 'Disetujui. Posting masuk jadwal.')} />}
         {gate === 'approve_plan' && gateStep && <Output title="Rencana teknis Arvin" text={gateStep.output_text} open />}
+        {gate === 'approve_series' && gateStep && <Output title="Rancangan seri dari Felix" text={gateStep.output_text} open />}
         {gate === 'web_review' && gateStep && <WebReview step={gateStep} />}
         {gate === 'task_review' && <Output title={'Hasil ' + task.assignee_name} text={lastRun?.output_text || ''} open />}
-        {['approve_plan', 'web_review', 'task_review'].includes(gate) && <button className="lc-primary" disabled={busy} onClick={() => void decide('approved', {}, 'Disetujui.')}>✅ Approve</button>}
+        {['approve_plan', 'approve_series', 'web_review', 'task_review'].includes(gate) && <button className="lc-primary" disabled={busy} onClick={() => void decide('approved', {}, 'Disetujui.')}>✅ Approve</button>}
         <Revise gate={gate} busy={busy} onSend={(notes, restartFrom) => decide('changes_requested', { notes, restartFrom }, 'Revisi terkirim.')} onReject={() => { if (confirm('Tolak task ini? Semua tahap berikutnya dibatalkan.')) void decide('rejected', {}, 'Task ditolak.'); }} />
       </div>}
 
@@ -99,7 +100,7 @@ function ChooseIdea({ step, busy, onPick }: { step: Step; busy: boolean; onPick:
         {ideas.map((x, i) => (
           <label key={i} className={'lc-idea' + (pick === i && !custom ? ' on' : '')}>
             <input type="radio" name="idea" checked={pick === i && !custom} onChange={() => { setPick(i); setCustom(''); }} />
-            <b>{i + 1}. {x.title}</b> <span className="lc-chip sm">{x.format === 'cards' ? 'motion cards' : 'explainer'}</span>
+            <b>{i + 1}. {x.title}</b> <span className="lc-chip sm">{x.format === 'cards' ? 'motion cards' : x.format === 'story' ? 'cerita bersambung' : 'explainer'}</span>
             <p>🎣 {x.hook}</p>
             <p className="lc-muted">{x.why_it_works}</p>
             {x.sources?.length > 0 && <details><summary>{x.sources.length} sumber · fakta</summary><ul>{x.key_facts?.map((f: string, j: number) => <li key={j}>{f}</li>)}</ul><ul>{x.sources.map((s: any, j: number) => <li key={j}><a href={s.url} target="_blank" rel="noreferrer">{s.title}</a></li>)}</ul></details>}

@@ -3,7 +3,7 @@ import { api, ApiError, fmtAgo, usd, STATUS_LABEL, TYPE_LABEL, type Employee, ty
 import TaskView from './TaskView';
 import NewTask from './NewTask';
 import Chat from './Chat';
-import { Projects, Settings, Social } from './Studio';
+import { Projects, SeriesList, Settings, Social } from './Studio';
 import './cc.css';
 
 export type Focus = { task?: string; chat?: string; tab?: Tab } | null;
@@ -101,7 +101,7 @@ export default function CommandCenter({ open, onClose, focus, onAuth, onUnread }
           </>)}
 
           {tab === 'chat' && <Chat employees={employees} thread={thread} setThread={setThread} />}
-          {tab === 'studio' && <><Social /><Projects projects={projects} reload={refresh} /></>}
+          {tab === 'studio' && <><SeriesList onOpen={openTask} /><Social /><Projects projects={projects} reload={refresh} /></>}
           {tab === 'settings' && <><Settings /><button className="lc-logout" onClick={() => void logout()}>Keluar</button></>}
         </div>
       </>}
@@ -114,7 +114,7 @@ function TaskCard({ t, onOpen }: { t: TaskRow; onOpen: () => void }) {
   const step = t.current_step;
   return (
     <button className="lc-task" onClick={onOpen}>
-      <span className="lc-row between"><b>{TYPE_LABEL[t.task_type] === 'Video' ? '🎬 ' : t.task_type.startsWith('web') ? '🧑‍💻 ' : '📝 '}{t.title}</b><span className="lc-chip sm" data-s={t.status}>{STATUS_LABEL[t.status] || t.status}</span></span>
+      <span className="lc-row between"><b>{t.task_type.startsWith('story') ? '🎞️ ' : TYPE_LABEL[t.task_type] === 'Video' ? '🎬 ' : t.task_type.startsWith('web') ? '🧑‍💻 ' : '📝 '}{t.title}</b><span className="lc-chip sm" data-s={t.status}>{STATUS_LABEL[t.status] || t.status}</span></span>
       <small>{step ? (step.status === 'awaiting_approval' ? '🙋 ' : step.status === 'running' ? '⌨️ ' : step.status === 'failed' ? '⚠️ ' : '⏳ ') + step.title : t.assignee_name} · {fmtAgo(t.updated_at)}</small>
       <span className="lc-bar"><i style={{ width: pct + '%' }} /></span>
     </button>
