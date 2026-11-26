@@ -49,7 +49,7 @@ Alex adalah supervisor virtual, bukan salah satu dari sembilan employee seats ya
 - Video output motion-comic vertikal 720x1280 dan authenticated MP4 download.
 - Approval gate setelah riset Nadia dan sebelum distribusi final Olivier.
 - Publication queue untuk Instagram, TikTok, YouTube, dan Facebook.
-- Fondasi koneksi akun sosial berbasis OAuth dan penyimpanan token terenkripsi sedang dikembangkan di PR berikutnya.
+- Fondasi koneksi akun sosial berbasis OAuth dan penyimpanan token terenkripsi sudah terintegrasi; live provider OAuth tetap membutuhkan kredensial dan verifikasi.
 
 ## Workflow produksi video
 
@@ -85,8 +85,8 @@ Setelah final approval, sistem membuat publication jobs untuk empat platform. **
 | PR #1 — Director sessions + video pipeline | Merged to `main` | Merge commit `efb2feb197fff77f3006c1cf91be921c289b1df7` |
 | Approval gates + publication queue | Integrated into `main` | Present in main commit `bf3b65f0af07a6a61be153e35e3c63fe9d05c725`; source PR #2 remains open as historical/conflicted PR |
 | PR #3 — social OAuth foundation | Open, not merged | Source branch `feat/social-account-foundation`, head `9d3c0e2`; CI passed on source head; must be reconstructed on current `main` |
-| VPS deployment | Not performed for these pending changes | Production remains on previously deployed revision until an explicit deploy run |
-| README | Updated on `main` | Two-section app/developer handover; keep synchronized with every meaningful change |
+| VPS deployment | Not performed for the latest main changes | Production remains on the previously deployed revision until a deploy is executed and verified on the VPS |
+| README | Updated on `main` | Two-section app/developer handover includes OAuth foundation and current integration status |
 
 Do not assume PR #2 or PR #3 is deployed. Do not mark social accounts connected or posts published without live provider verification.
 
