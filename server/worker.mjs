@@ -79,6 +79,7 @@ async function claim() {
 }
 
 async function callTextAgent(task, systemPrompt, instruction, context) {
+  const researchTask = task.assignee_id === 'nadia' || /riset|research|referensi|tren industri|market research/i.test([task.title, task.instruction, instruction].join(' '));
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     signal: AbortSignal.timeout(90000),
@@ -86,9 +87,10 @@ async function callTextAgent(task, systemPrompt, instruction, context) {
     body: JSON.stringify({
       model,
       reasoning: { effort: process.env.OPENAI_REASONING_EFFORT || 'low' },
-      max_output_tokens: Number(process.env.MAX_OUTPUT_TOKENS || 4000),
+      max_output_tokens: Math.max(Number(process.env.MAX_OUTPUT_TOKENS || 8000), 8000),
+      ...(researchTask ? { tools: [{ type: 'web_search' }] } : {}),
       input: [
-        { role: 'system', content: systemPrompt + '\nIkuti job description dan batas kewenanganmu. Jangan mengerjakan peran personnel lain. Jangan mengarang sumber, angka, progres, atau hasil. Laporkan hasil, kendala, dan handoff secara jelas.' },
+        { role: 'system', content: systemPrompt + '\nIkuti job description dan batas kewenanganmu. Jangan mengerjakan peran personnel lain. Jangan mengarang sumber, angka, progres, atau hasil. Laporkan hasil, kendala, dan handoff secara jelas.' + (researchTask ? '\nUntuk tugas riset, gunakan web_search secara nyata. Cantumkan judul sumber, organisasi/penerbit, tanggal/tahun, URL langsung, dan klaim yang didukung. Jangan menyebut sumber yang tidak benar-benar dibuka. Pisahkan fakta bersumber dari analisis/opini. Jika output mendekati batas, prioritaskan menyelesaikan semua bagian brief secara ringkas daripada memanjangkan pendahuluan.' : '') },
         { role: 'user', content: 'Task: ' + task.title + '\nBrief utama: ' + task.instruction + '\nAcceptance criteria: ' + (task.acceptance_criteria || 'Hasil akurat, lengkap, dapat diperiksa.') + '\nInstruksi tahap: ' + instruction + '\n\nKonteks dan hasil tahap sebelumnya:\n' + context }
       ]
     })
@@ -105,6 +107,8 @@ async function callTextAgent(task, systemPrompt, instruction, context) {
     inputTokens: data.usage?.input_tokens || 0,
     outputTokens: data.usage?.output_tokens || 0
   };
+  if (data.status === 'incomplete' || data.incomplete_details) throw new Error('Incomplete model response; reason=' + (data.incomplete_details?.reason || 'unknown') + '; output_tokens=' + usage.outputTokens + '; response_id=' + (data.id || 'unknown'));
+  if (data.status && data.status !== 'completed') throw new Error('Model response not completed; status=' + data.status + '; response_id=' + (data.id || 'unknown'));
   const outputItems = Array.isArray(data.output) ? data.output : [];
   const textParts = outputItems.flatMap(item => Array.isArray(item.content) ? item.content : [])
     .filter(item => item.type === 'output_text' && typeof item.text === 'string')
