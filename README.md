@@ -83,8 +83,8 @@ Setelah final approval, sistem membuat publication jobs untuk empat platform. **
 | Area | Status | Notes |
 |---|---|---|
 | PR #1 — Director sessions + video pipeline | Merged to `main` | Merge commit `efb2feb197fff77f3006c1cf91be921c289b1df7` |
-| PR #2 — approval gates + publication queue | Integration branch prepared | `integration/approval-gates-on-main`; CI passed on source head `73a608f`; awaiting PR/merge |
-| PR #3 — social OAuth foundation | Open, not merged | Source branch `feat/social-account-foundation`, head `9d3c0e2`; CI passed; depends on PR #2 |
+| PR #2 — approval gates + publication queue | Reconstructed PR #5 open | `integration/approval-gates-on-main` is based on current `main`; exact reconstructed-tree CI is pending |
+| PR #3 — social OAuth foundation | Open, not merged | Source branch `feat/social-account-foundation`, head `9d3c0e2`; CI passed on source head; must be reconstructed on top of PR #5 after merge |
 | VPS deployment | Not performed for these pending changes | Production remains on previously deployed revision until an explicit deploy run |
 | README | Being maintained as handover document | Update this section with every meaningful code/config/schema/deployment change |
 
