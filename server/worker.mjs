@@ -150,22 +150,6 @@ async function executeRegularTask(task) {
   await pool.query("INSERT INTO task_events(task_id,event_type) VALUES($1,'task_ready_for_review')", [task.id]);
 }
 
-async function tick() {
-  if (busy || stopping) return;
-  busy = true;
-  try {
-    const task = await claim();
-    if (!task) return;
-    const daily = await pool.query("SELECT count(*)::int AS n FROM task_runs WHERE started_at>=date_trunc('day',now())");
-    if (daily.rows[0].n > limit) throw new Error('Daily run limit reached');
-    if (task.workflow) await executeWorkflowStep(task);
-    else await executeRegularTask(task);
-  } catch (error) {
-    console.error('worker execution failed', error);
-    // The task/run identifiers are captured by the active claim below in the next revision if claim succeeds.
-  } finally { busy = false; }
-}
-
 async function processOne() {
   if (busy || stopping) return;
   busy = true;
