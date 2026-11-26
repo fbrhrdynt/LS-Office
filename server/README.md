@@ -64,3 +64,17 @@ Workflow steps are created atomically with the parent task. Their assignee, stat
 - Olivier prepares platform-specific distribution material and pauses for the final Director approval.
 - Final approval creates one publication job each for Instagram, TikTok, YouTube and Facebook. The jobs are persisted as `awaiting_connection`; the task detail view shows this state.
 - Important: the current implementation creates the publication queue but does not upload or publish media yet. Actual publishing requires official OAuth/app credentials, platform-specific upload flows, and a publicly reachable media URL or platform upload session. Do not mark a post as published until the platform returns a verified post ID/URL.
+
+
+## Social account OAuth foundation
+
+- Director-only GET /api/social/accounts reports OAuth configuration readiness and connected-account metadata for Instagram, Facebook, TikTok and YouTube. It never returns credentials or token values.
+- The Connect account action starts a server-side authorization-code flow. OAuth state is random, stored hashed, expires after 10 minutes, and is bound to the active Director session. Callback consumes state once and rejects expired, replayed, cross-session or mismatched-platform responses.
+- The session cookie uses Secure, HttpOnly and SameSite=Lax so the provider's top-level GET callback can carry the Director session. Mutating API requests still validate Origin.
+- Access and refresh tokens are encrypted with AES-256-GCM before persistence. Configure SOCIAL_TOKEN_ENCRYPTION_KEY as base64 for exactly 32 random bytes. The key must remain in /etc/ls-office/api.env, must not be committed, and must be backed up securely; losing it makes stored tokens unrecoverable.
+- Meta uses one app and the configured META_REDIRECT_URI callback (set it to https://office.febro.id/api/social/facebook/callback). It discovers accessible Pages and linked Instagram Professional accounts. The page access token is stored for each returned Page/Instagram identity.
+- TikTok uses Login Kit web OAuth and requests user.info.basic and video.publish. The app must have the relevant Login Kit and Content Posting API products/scopes approved.
+- YouTube uses Google web-server OAuth, offline access and YouTube upload/read scopes. The Google OAuth redirect URI must exactly match GOOGLE_REDIRECT_URI.
+- Configure META_APP_ID/META_APP_SECRET/META_REDIRECT_URI, TIKTOK_CLIENT_KEY/TIKTOK_CLIENT_SECRET/TIKTOK_REDIRECT_URI and GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI. Never use VITE_ prefixes or commit credentials.
+- OAuth account linking is implemented, but token refresh, disconnect/revoke UI, media upload, publication retries and verified publishing are not implemented. Publication jobs remain non-published until a platform-specific publisher is built and verifies the returned post ID/permalink.
+- Before enabling production connections, register the exact HTTPS redirect URIs in each provider console and verify the requested permissions are approved for the app.
