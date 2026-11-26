@@ -16,9 +16,12 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/ls-office
 RestrictSUIDSGID=true
 LockPersonality=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+# Code is read-only for the service; runtime data lives in /var/lib/ls-office.
+ReadOnlyPaths=/var/lib/ls-office
 MemoryMax=350M
 CPUQuota=60%
 

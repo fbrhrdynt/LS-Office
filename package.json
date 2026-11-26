@@ -1,7 +1,7 @@
 {
   "name": "ls-office",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "LogiSource AI Office",
   "scripts": {
@@ -12,15 +12,28 @@
     "api": "node server/index.mjs",
     "worker": "node server/worker.mjs",
     "test:workflow": "node scripts/test-workflow.mjs",
-    "test:social-oauth": "node scripts/test-social-oauth.mjs"
+    "test:social-oauth": "node scripts/test-social-oauth.mjs",
+    "render-worker": "node server/render-worker.mjs",
+    "publisher": "node server/publisher.mjs",
+    "telegram": "node server/telegram.mjs",
+    "devagent": "node server/devagent.mjs",
+    "build:remotion": "node scripts/build-remotion.mjs",
+    "build:all": "npm run build && npm run build:remotion",
+    "remotion:studio": "remotion studio remotion/index.ts"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/montserrat": "^5.3.0",
+    "@remotion/bundler": "4.0.547",
+    "@remotion/renderer": "4.0.547",
+    "pg": "^8.16.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "three": "0.170.0",
-    "pg": "^8.16.3"
+    "remotion": "4.0.547",
+    "three": "0.170.0"
   },
   "devDependencies": {
+    "@remotion/cli": "4.0.547",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "0.170.0",

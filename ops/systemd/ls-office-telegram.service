@@ -1,0 +1,28 @@
+[Unit]
+Description=LogiSource AI Office Telegram Bot
+After=network.target postgresql.service ls-office-api.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=ls-office
+Group=ls-office
+WorkingDirectory=/opt/ls-office
+EnvironmentFile=/etc/ls-office/api.env
+ExecStart=/usr/bin/node /opt/ls-office/server/telegram.mjs
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ReadOnlyPaths=/var/lib/ls-office
+MemoryMax=200M
+CPUQuota=20%
+
+[Install]
+WantedBy=multi-user.target

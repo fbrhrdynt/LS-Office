@@ -1,221 +1,110 @@
-import pg from 'pg';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { stat } from 'node:fs/promises';
-import { renderAnimatedDrama } from './video.mjs';
+import { startWorker } from './lib/runner.mjs';
+import { respond } from './lib/ai.mjs';
+import { workContext } from './lib/engine.mjs';
+import { answerNextMessage } from './lib/chat.mjs';
+import { config } from './lib/config.mjs';
+import { SCHEMAS, stepDef } from './workflows.mjs';
+import { formatOutput } from './lib/format.mjs';
+import { hasCues } from './video/produce.mjs';
 
-const { Pool } = pg;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
 const exec = promisify(execFile);
-const key = process.env.OPENAI_API_KEY;
-const model = process.env.OPENAI_MODEL || 'gpt-5-mini';
-const poll = Number(process.env.WORKER_POLL_MS || 4000);
-const limit = Number(process.env.MAX_DAILY_RUNS || 40);
-if (!key) throw new Error('OPENAI_API_KEY is required by worker');
-let stopping = false;
-let busy = false;
 
-async function createRun(client, taskId) {
-  const n = await client.query('SELECT COALESCE(MAX(attempt),0)+1 AS n FROM task_runs WHERE task_id=$1', [taskId]);
-  const run = await client.query("INSERT INTO task_runs(task_id,attempt,status,model) VALUES($1,$2,'running',$3) RETURNING id", [taskId, n.rows[0].n, model]);
-  return run.rows[0].id;
-}
+const RULES = '\nIkuti job description dan batas kewenanganmu. Jangan mengerjakan peran personnel lain. Jangan mengarang sumber, angka, progres, atau hasil. Tulis dalam bahasa Indonesia kecuali diminta lain.';
+const RESEARCH_RULES = '\nUntuk riset, gunakan web_search secara nyata. Cantumkan sumber yang benar-benar dibuka (judul + URL). Pisahkan fakta dari opini.';
 
-async function claimWorkflowStep() {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await client.query(`
-      SELECT s.id AS step_id,s.step_key,s.title AS step_title,s.instruction AS step_instruction,s.assignee_id AS step_assignee,s.requires_approval,
-             t.*,e.system_prompt
-      FROM workflow_steps s
-      JOIN tasks t ON t.id=s.task_id
-      LEFT JOIN employees e ON e.id=s.assignee_id
-      WHERE s.status='pending' AND t.task_type='animated_video' AND t.status IN ('queued','in_progress')
-        AND NOT EXISTS (
-          SELECT 1 FROM workflow_steps previous
-          WHERE previous.task_id=s.task_id AND previous.step_order<s.step_order AND previous.status NOT IN ('completed','skipped')
-        )
-      ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,t.created_at,s.step_order
-      LIMIT 1 FOR UPDATE OF s,t SKIP LOCKED
-    `);
-    if (!result.rowCount) { await client.query('COMMIT'); return null; }
-    const step = result.rows[0];
-    await client.query("UPDATE workflow_steps SET status='running',started_at=now() WHERE id=$1", [step.step_id]);
-    await client.query("UPDATE tasks SET status='in_progress',updated_at=now() WHERE id=$1", [step.id]);
-    const runId = await createRun(client, step.id);
-    await client.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'workflow_step_started',$2)", [step.id, JSON.stringify({ stepKey: step.step_key, assigneeId: step.step_assignee })]);
-    await client.query('COMMIT');
-    return { ...step, runId, workflow: true };
-  } catch (error) { await client.query('ROLLBACK'); throw error; }
-  finally { client.release(); }
-}
-
-async function claimRegularTask() {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await client.query(`
-      SELECT t.*,e.system_prompt FROM tasks t
-      JOIN employees e ON e.id=t.assignee_id
-      WHERE t.status IN ('queued','assigned','changes_requested')
-        AND NOT EXISTS (SELECT 1 FROM workflow_steps s WHERE s.task_id=t.id)
-      ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,t.created_at
-      LIMIT 1 FOR UPDATE OF t SKIP LOCKED
-    `);
-    if (!result.rowCount) { await client.query('COMMIT'); return null; }
-    const task = result.rows[0];
-    await client.query("UPDATE tasks SET status='in_progress',updated_at=now() WHERE id=$1", [task.id]);
-    const runId = await createRun(client, task.id);
-    await client.query("INSERT INTO task_events(task_id,event_type) VALUES($1,'task_started')", [task.id]);
-    await client.query('COMMIT');
-    return { ...task, runId, workflow: false };
-  } catch (error) { await client.query('ROLLBACK'); throw error; }
-  finally { client.release(); }
-}
-
-async function claim() {
-  return await claimWorkflowStep() || await claimRegularTask();
-}
-
-async function callTextAgent(task, systemPrompt, instruction, context) {
-  const researchTask = task.assignee_id === 'nadia' || /riset|research|referensi|tren industri|market research/i.test([task.title, task.instruction, instruction].join(' '));
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    signal: AbortSignal.timeout(90000),
-    headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      reasoning: { effort: process.env.OPENAI_REASONING_EFFORT || 'low' },
-      max_output_tokens: Math.max(Number(process.env.MAX_OUTPUT_TOKENS || 8000), 8000),
-      ...(researchTask ? { tools: [{ type: 'web_search' }] } : {}),
-      input: [
-        { role: 'system', content: systemPrompt + '\nIkuti job description dan batas kewenanganmu. Jangan mengerjakan peran personnel lain. Jangan mengarang sumber, angka, progres, atau hasil. Laporkan hasil, kendala, dan handoff secara jelas.' + (researchTask ? '\nUntuk tugas riset, gunakan web_search secara nyata. Cantumkan judul sumber, organisasi/penerbit, tanggal/tahun, URL langsung, dan klaim yang didukung. Jangan menyebut sumber yang tidak benar-benar dibuka. Pisahkan fakta bersumber dari analisis/opini. Jika output mendekati batas, prioritaskan menyelesaikan semua bagian brief secara ringkas daripada memanjangkan pendahuluan.' : '') },
-        { role: 'user', content: 'Task: ' + task.title + '\nBrief utama: ' + task.instruction + '\nAcceptance criteria: ' + (task.acceptance_criteria || 'Hasil akurat, lengkap, dapat diperiksa.') + '\nInstruksi tahap: ' + instruction + '\n\nKonteks dan hasil tahap sebelumnya:\n' + context }
-      ]
-    })
+async function agentStep(job, { pool }) {
+  const ctx = { pool, taskId: job.id, runId: job.runId, stepKey: job.step_key || 'task' };
+  const context = await workContext(pool, job);
+  if (!job.workflow) {
+    const research = job.assignee_id === 'nadia' || /riset|research|referensi|tren|market/i.test(job.title + ' ' + job.instruction);
+    const r = await respond({ system: job.system_prompt + RULES + (research ? RESEARCH_RULES : ''), user: context, webSearch: research, ctx });
+    await pool.query('UPDATE task_runs SET input_tokens=$2,output_tokens=$3 WHERE id=$1', [job.runId, r.inputTokens, r.outputTokens]);
+    return { text: r.text };
+  }
+  const def = stepDef(job.task_type, job.step_key);
+  if (!job.system_prompt) throw new Error('Employee prompt not found for step ' + job.step_key);
+  const schema = def?.schema ? SCHEMAS[def.schema] : null;
+  // The current definition wins over the copy stored at task creation, so prompt fixes reach tasks in flight.
+  const instruction = def?.instruction || job.step_instruction;
+  const ask = (extra = '') => respond({
+    system: job.system_prompt + RULES + (def?.webSearch ? RESEARCH_RULES : ''),
+    user: 'INSTRUKSI TAHAPMU (' + job.step_title + '):\n' + instruction + '\n\n' + context + extra,
+    schema, schemaName: job.step_key, webSearch: Boolean(def?.webSearch), ctx,
+    maxOutputTokens: def?.webSearch ? 16000 : 12000, timeoutMs: 300000,
   });
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error('OpenAI returned a non-JSON response (HTTP ' + response.status + ')');
+  let r = await ask();
+  let problem = r.json ? await validate(pool, job, r.json) : null;
+  if (problem) {
+    // One self-correction round: the agent sees exactly what was wrong.
+    r = await ask('\n\n### HASILMU SEBELUMNYA DITOLAK QA, PERBAIKI:\n' + problem + '\n\nHasil sebelumnya:\n' + JSON.stringify(r.json).slice(0, 8000));
+    problem = await validate(pool, job, r.json);
+    if (problem) throw new Error('Output ' + job.step_title + ' tidak lolos validasi: ' + problem);
   }
-  if (!response.ok) throw new Error(data.error?.message || 'OpenAI API HTTP ' + response.status);
-
-  const usage = {
-    inputTokens: data.usage?.input_tokens || 0,
-    outputTokens: data.usage?.output_tokens || 0
-  };
-  if (data.status === 'incomplete' || data.incomplete_details) throw new Error('Incomplete model response; reason=' + (data.incomplete_details?.reason || 'unknown') + '; output_tokens=' + usage.outputTokens + '; response_id=' + (data.id || 'unknown'));
-  if (data.status && data.status !== 'completed') throw new Error('Model response not completed; status=' + data.status + '; response_id=' + (data.id || 'unknown'));
-  const outputItems = Array.isArray(data.output) ? data.output : [];
-  const textParts = outputItems.flatMap(item => Array.isArray(item.content) ? item.content : [])
-    .filter(item => item.type === 'output_text' && typeof item.text === 'string')
-    .map(item => item.text);
-  const output = [typeof data.output_text === 'string' ? data.output_text : '', ...textParts]
-    .filter(Boolean).join('\n').trim();
-
-  if (!output) {
-    const refusal = outputItems.flatMap(item => Array.isArray(item.content) ? item.content : [])
-      .find(item => item.type === 'refusal' && typeof item.refusal === 'string');
-    if (refusal) throw new Error('Model refusal: ' + refusal.refusal.slice(0, 500));
-    const reason = data.incomplete_details?.reason || 'none';
-    const itemTypes = outputItems.map(item => item.type || 'unknown').join(',') || 'none';
-    const contentTypes = outputItems.flatMap(item => Array.isArray(item.content) ? item.content : [])
-      .map(item => item.type || 'unknown').join(',') || 'none';
-    throw new Error('No text in OpenAI response; status=' + (data.status || 'unknown') +
-      '; incomplete_reason=' + reason + '; output_items=' + itemTypes +
-      '; content_items=' + contentTypes + '; input_tokens=' + usage.inputTokens +
-      '; output_tokens=' + usage.outputTokens + '; response_id=' + (data.id || 'unknown'));
-  }
-
-  return { output, ...usage };
+  await pool.query('UPDATE task_runs SET input_tokens=input_tokens+$2,output_tokens=output_tokens+$3 WHERE id=$1', [job.runId, r.inputTokens, r.outputTokens]);
+  return { text: r.json ? formatOutput(job.step_key, r.json) : r.text, json: r.json };
 }
 
-async function workflowContext(task) {
-  const result = await pool.query('SELECT step_key,title,output_text FROM workflow_steps WHERE task_id=$1 AND status=\'completed\' ORDER BY step_order', [task.id]);
-  return result.rows.map(step => '### ' + step.title + ' (' + step.step_key + ')\n' + (step.output_text || '')).join('\n\n');
-}
+const words = (s) => String(s || '').split(/\s+/).filter(Boolean).length;
 
-async function executeWorkflowStep(task) {
-  const context = await workflowContext(task);
-  let output = '';
-  let video = null;
-  if (task.step_key === 'render_video') {
-    video = await renderAnimatedDrama({ ...task, workflowContext: context });
-    output = video.summary;
-    await pool.query("UPDATE tasks SET artifact_path=$2,artifact_mime='video/mp4',artifact_name=$3,updated_at=now() WHERE id=$1", [task.id, video.output, video.name]);
-  } else if (task.step_key === 'qa_video') {
-    const result = await pool.query('SELECT artifact_path,artifact_name FROM tasks WHERE id=$1', [task.id]);
-    if (!result.rowCount || !result.rows[0].artifact_path) throw new Error('MP4 artifact tidak ditemukan');
-    const file = result.rows[0].artifact_path;
-    const info = await stat(file);
-    if (!info.isFile() || info.size < 10000) throw new Error('File MP4 kosong atau terlalu kecil');
-    const { stdout } = await exec(process.env.FFPROBE_PATH || 'ffprobe', ['-v','error','-show_entries','format=duration,format_name:stream=codec_type,codec_name,width,height','-of','json',file], { timeout: 30000, maxBuffer: 1024 * 1024 });
-    const probe = JSON.parse(stdout);
-    const videoStream = (probe.streams || []).find(stream => stream.codec_type === 'video');
-    const audioStream = (probe.streams || []).find(stream => stream.codec_type === 'audio');
-    const duration = Number(probe.format?.duration || 0);
-    if (!videoStream || !audioStream || duration < 5 || videoStream.width !== 720 || videoStream.height !== 1280) throw new Error('QA gagal: stream video/audio, durasi, atau resolusi tidak sesuai');
-    output = 'QA PASS\nFile: ' + result.rows[0].artifact_name + '\nSize: ' + info.size + ' bytes\nDuration: ' + duration.toFixed(2) + ' seconds\nVideo: ' + videoStream.codec_name + ' ' + videoStream.width + 'x' + videoStream.height + '\nAudio: ' + audioStream.codec_name;
-  } else {
-    if (!task.system_prompt) throw new Error('Employee prompt not found for workflow step ' + task.step_key);
-    const result = await callTextAgent(task, task.system_prompt, task.step_instruction, context);
-    output = result.output;
-    await pool.query("UPDATE task_runs SET input_tokens=$2,output_tokens=$3 WHERE id=$1", [task.runId, result.inputTokens, result.outputTokens]);
+/** Rules the JSON schema cannot express. Returns a problem description, or null when the output is fine. */
+async function validate(pool, job, json) {
+  const key = job.step_key;
+  if (key === 'ideas' && !(json.ideas?.length >= 2)) return 'Berikan 3-5 ide, bukan ' + (json.ideas?.length || 0);
+  if (key === 'script') {
+    const total = json.scenes.reduce((n, x) => n + words(x.spoken), 0);
+    const bad = json.scenes.map((x, i) => (hasCues(x.spoken) || /[()[\]]/.test(x.spoken) ? i + 1 : 0)).filter(Boolean);
+    if (bad.length) return 'Adegan ' + bad.join(', ') + ' masih berisi arahan/label/tanda kurung di field spoken. Pindahkan ke visual_note.';
+    if (total < 80 || total > 190) return 'Total kata yang diucapkan ' + total + '; harus 110-160.';
+    if (json.scenes.length < 3) return 'Minimal 4 adegan.';
   }
-
-  await pool.query("UPDATE task_runs SET status='succeeded',output_text=$2,finished_at=now() WHERE id=$1", [task.runId, output]);
-  const nextStepStatus = task.requires_approval ? 'awaiting_approval' : 'completed';
-  await pool.query('UPDATE workflow_steps SET status=$2,output_text=$3,finished_at=now() WHERE id=$1', [task.step_id, nextStepStatus, output]);
-  if (task.requires_approval) {
-    await pool.query("UPDATE tasks SET status='review',updated_at=now() WHERE id=$1", [task.id]);
-    await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'director_checkpoint_ready',$2)", [task.id, JSON.stringify({ stepKey: task.step_key })]);
-  } else {
-    const pending = await pool.query("SELECT count(*)::int AS count FROM workflow_steps WHERE task_id=$1 AND status NOT IN ('completed','skipped')", [task.id]);
-    if (pending.rows[0].count === 0) {
-      await pool.query("UPDATE tasks SET status='review',updated_at=now() WHERE id=$1", [task.id]);
-      await pool.query("INSERT INTO task_events(task_id,event_type) VALUES($1,'task_ready_for_review')", [task.id]);
-    } else {
-      await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'workflow_step_completed',$2)", [task.id, JSON.stringify({ stepKey: task.step_key, nextStepPending: true })]);
+  if (key === 'storyboard') {
+    if (!(json.scenes?.length >= 3 && json.scenes.length <= 12)) return 'Storyboard harus 4-10 adegan';
+    const bad = json.scenes.map((x, i) => (hasCues(x.narration) || /[()[\]]/.test(x.narration) ? i + 1 : 0)).filter(Boolean);
+    if (bad.length) return 'Narasi adegan ' + bad.join(', ') + ' berisi arahan/label. Narasi hanya kata yang diucapkan.';
+    for (const [i, x] of json.scenes.entries()) {
+      if (!x.narration.trim()) return 'Adegan ' + (i + 1) + ' tidak punya narasi';
+      if (json.template === 'explainer' && x.image_prompt.trim().length < 20 && x.card.kind === 'none') return 'Adegan ' + (i + 1) + ' tidak punya visual';
+    }
+    if (words(json.hook_text) > 12) return 'hook_text maksimal 10 kata';
+    const script = (await pool.query("SELECT output_json FROM workflow_steps WHERE task_id=$1 AND step_key='script'", [job.id])).rows[0]?.output_json;
+    if (script?.scenes) {
+      const want = script.scenes.reduce((n, x) => n + words(x.spoken), 0);
+      const got = json.scenes.reduce((n, x) => n + words(x.narration), 0);
+      if (Math.abs(got - want) > Math.max(8, want * 0.12)) return 'Narasi storyboard ' + got + ' kata, naskah Felix ' + want + ' kata. Salin persis field spoken dari naskah.';
     }
   }
+  if (key === 'distribution' && !json.posts?.length) return 'Siapkan caption minimal untuk satu platform';
+  return null;
 }
 
-async function executeRegularTask(task) {
-  const result = await callTextAgent(task, task.system_prompt, task.instruction, '');
-  await pool.query("UPDATE task_runs SET status='succeeded',output_text=$2,input_tokens=$3,output_tokens=$4,finished_at=now() WHERE id=$1", [task.runId, result.output, result.inputTokens, result.outputTokens]);
-  await pool.query("UPDATE tasks SET status='review',updated_at=now() WHERE id=$1", [task.id]);
-  await pool.query("INSERT INTO task_events(task_id,event_type) VALUES($1,'task_ready_for_review')", [task.id]);
+async function qaVideo(job, { pool }) {
+  const r = await pool.query('SELECT artifact_path,artifact_name FROM tasks WHERE id=$1', [job.id]);
+  const file = r.rows[0]?.artifact_path;
+  if (!file) throw new Error('MP4 artifact tidak ditemukan');
+  const info = await stat(file);
+  if (!info.isFile() || info.size < 50000) throw new Error('File MP4 kosong atau terlalu kecil');
+  const { stdout } = await exec(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height', '-of', 'json', file], { timeout: 30000, maxBuffer: 1 << 20 });
+  const probe = JSON.parse(stdout);
+  const v = probe.streams?.find((s) => s.codec_type === 'video');
+  const a = probe.streams?.find((s) => s.codec_type === 'audio');
+  const duration = Number(probe.format?.duration || 0);
+  const checks = [
+    ['Stream video H.264', v?.codec_name === 'h264'],
+    ['Stream audio AAC', a?.codec_name === 'aac'],
+    ['Resolusi ' + config.videoWidth + 'x' + config.videoHeight, v?.width === config.videoWidth && v?.height === config.videoHeight],
+    ['Durasi 15-180 detik', duration >= 15 && duration <= 180],
+  ];
+  const lines = checks.map(([label, ok]) => (ok ? '✓ ' : '✗ ') + label);
+  if (checks.some(([, ok]) => !ok)) throw new Error('QA gagal:\n' + lines.join('\n'));
+  return { text: 'QA PASS\n' + lines.join('\n') + '\nDurasi: ' + duration.toFixed(1) + ' detik · Ukuran: ' + (info.size / 1048576).toFixed(1) + ' MB\nVideo siap direview Director.' };
 }
 
-async function processOne() {
-  if (busy || stopping) return;
-  busy = true;
-  let task = null;
-  try {
-    const daily = await pool.query("SELECT count(*)::int AS n FROM task_runs WHERE started_at>=date_trunc('day',now())");
-    if (daily.rows[0].n >= limit) {
-      console.warn('Daily run limit reached; queue remains untouched');
-      return;
-    }
-    task = await claim();
-    if (!task) return;
-    if (task.workflow) await executeWorkflowStep(task);
-    else await executeRegularTask(task);
-  } catch (error) {
-    console.error('task failed', task?.id, error.message);
-    if (task?.runId) await pool.query("UPDATE task_runs SET status='failed',error_message=$2,finished_at=now() WHERE id=$1", [task.runId, String(error.message).slice(0,1000)]).catch(() => {});
-    if (task?.workflow && task.step_id) await pool.query("UPDATE workflow_steps SET status='failed' WHERE id=$1", [task.step_id]).catch(() => {});
-    if (task?.id) {
-      await pool.query("UPDATE tasks SET status='failed',updated_at=now() WHERE id=$1", [task.id]).catch(() => {});
-      await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'task_failed',$2)", [task.id, JSON.stringify({ error: String(error.message).slice(0,1000), stepKey: task.step_key || null })]).catch(() => {});
-    }
-  } finally { busy = false; }
-}
-
-console.log('LS Office worker online; model=' + model);
-const timer = setInterval(() => void processOne(), poll);
-void processOne();
-for (const signal of ['SIGTERM','SIGINT']) process.on(signal, async () => { stopping = true; clearInterval(timer); await pool.end(); process.exit(0); });
+await startWorker({
+  name: 'ls-office-worker',
+  executors: ['agent', 'qa'],
+  execute: (job, opts) => (job.executor === 'qa' ? qaVideo(job, opts) : agentStep(job, opts)),
+  extraLoops: [{ every: 1500, fn: answerNextMessage }],
+});

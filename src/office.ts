@@ -1,7 +1,7 @@
 /** Logika kantor (murni, dites di scripts/test.mjs): siapa sedang apa jam berapa, timelapse, dan aktivitas santai. */
 import { AGEN, BABAK, JADWAL, JAM_KANTOR, LAPORAN, type Agen, type RoomKey } from './config';
 
-export type Activity = 'kerja' | 'laporan' | 'belajar' | 'siaga' | 'pulang';
+export type Activity = 'kerja' | 'laporan' | 'belajar' | 'siaga' | 'pulang' | 'menunggu' | 'kendala';
 export interface Doing {
   activity: Activity;
   label: string;
@@ -115,4 +115,35 @@ export function params(q: URLSearchParams) {
     /** Default true: kantor contoh tetap bekerja di akhir pekan. ?libur=1 untuk jadwal sungguhan. */
     alwaysWork: q.get('libur') !== '1',
   };
+}
+
+/* ---------- kantor nyata: status dari backend, gerak kecil di meja (tanpa mondar-mandir) ---------- */
+
+export type RuntimeState = 'working' | 'waiting' | 'blocked' | 'available';
+export interface RuntimeEntry { state: RuntimeState; title?: string; step?: string; taskId?: string; queued?: number }
+
+/** Status karyawan dari data backend (task/step yang benar-benar berjalan). */
+export function runtimeDoing(e: RuntimeEntry | undefined): Doing {
+  if (!e) return { activity: 'siaga', label: 'siap menerima perintah' };
+  if (e.state === 'working') return { activity: 'kerja', label: e.step ? e.step.toLowerCase() + '…' : 'mengerjakan task…' };
+  if (e.state === 'waiting') return { activity: 'menunggu', label: 'menunggu keputusanmu' };
+  if (e.state === 'blocked') return { activity: 'kendala', label: 'ada kendala, perlu dicek' };
+  return { activity: 'siaga', label: e.queued ? e.queued + ' tugas menunggu giliran' : 'siap menerima perintah' };
+}
+
+export type Fidget = 'layar' | 'minum' | 'regang' | 'tengok' | 'catat';
+/** Gerak kecil saat santai di meja: sebagian besar menatap layar, sesekali minum kopi, peregangan, menengok, mencatat. */
+export function fidgetAt(key: string, t: number): { fidget: Fidget; k: number } {
+  let h = 0;
+  for (const c of key) h = (h * 31 + c.charCodeAt(0)) % 997;
+  const period = 13 + (h % 7);
+  const shifted = t + h * 0.37;
+  const n = Math.floor(shifted / period);
+  const cycle = shifted - n * period;
+  const acts: Fidget[] = ['minum', 'catat', 'tengok', 'minum', 'regang'];
+  const act = acts[(n + h) % acts.length]!;
+  const len = act === 'regang' ? 3 : 2.6;
+  if (cycle < period - len) return { fidget: 'layar', k: 0 };
+  const x = (cycle - (period - len)) / len;
+  return { fidget: act, k: Math.sin(Math.PI * x) };
 }

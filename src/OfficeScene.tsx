@@ -23,7 +23,7 @@ import { buatKitGaya } from './gaya';
 import type { Dunia, Peran } from './gaya/alat';
 
 type AgentKey = string;
-import { idleAt, type DeskState, type IdleSpot } from './office';
+import { fidgetAt, type DeskState } from './office';
 
 /*
  * Kantor AI 3D (Three.js). Bentuk dan bahan datang dari gaya aktif (src/gaya/<id>.ts, `gaya`); tanpa model 3D, tekstur dari
@@ -73,6 +73,8 @@ interface Actor {
   deskTop: Mesh;
   book: Mesh;
   lamp: Mesh;
+  mug: Mesh;
+  handMug: Mesh;
   light: PointLight | null;
   seat: Vector3;
   label: Vector3;
@@ -327,8 +329,13 @@ export default function OfficeScene({ desks, night, boardCount, anchors, boardAn
       const armR = limb(0.07, 0.34, shirt, 0.29, 1.12);
       const legL = limb(0.085, 0.38, pants, -0.11, 0.62);
       const legR = limb(0.085, 0.38, pants, 0.11, 0.62);
+      // Coffee mug: on the desk, or in the right hand while sipping.
+      const mugM = mat('#f7f2ea', 'kertas');
+      const mug = add(cyl(0.055, 0.05, 0.11, mugM), x + 0.18, 0.88, z + 0.26);
+      const handMug = add(cyl(0.055, 0.05, 0.11, mugM), 0, -0.44, 0.06, armR);
+      handMug.visible = false;
       kantor.add(root);
-      return { key: d.desk.key, root, body, head, armL, armR, legL, legR, screen, deskTop, book, lamp, light, seat, label: new Vector3(), phase: i * 1.7, index: i };
+      return { key: d.desk.key, root, body, head, armL, armR, legL, legR, screen, deskTop, book, lamp, mug, handMug, light, seat, label: new Vector3(), phase: i * 1.7, index: i };
     });
 
     // ---------- camera ----------
@@ -470,28 +477,6 @@ export default function OfficeScene({ desks, night, boardCount, anchors, boardAn
     };
     const boardAt = new Vector3(BOARD.x, 2.75 + naik, Z0 + 0.1);
     const labelAt = new Vector3();
-    const dest = new Vector3();
-    const pos = new Vector3();
-    const ahead = new Vector3();
-    const tmp = new Vector3();
-    // A walk from the desk to a spot goes by the corridor (z = 0.05, through the doorways), never through a wall.
-    const CORRIDOR = 0.05;
-    const pathAt = (from: Vector3, to: Vector3, k: number, out: Vector3, _scratch: Vector3) => {
-      const p0 = from;
-      const p1x = from.x, p1z = CORRIDOR;
-      const p2x = to.x, p2z = CORRIDOR;
-      const l1 = Math.abs(p1z - p0.z);
-      const l2 = Math.abs(p2x - p1x);
-      const l3 = Math.abs(to.z - p2z);
-      const L = l1 + l2 + l3 || 1;
-      let d = k * L;
-      if (d <= l1) return out.set(p0.x, 0, p0.z + Math.sign(p1z - p0.z) * d);
-      d -= l1;
-      if (d <= l2) return out.set(p1x + Math.sign(p2x - p1x) * d, 0, p1z);
-      d -= l2;
-      return out.set(p2x, 0, p2z + Math.sign(to.z - p2z) * Math.min(d, l3));
-    };
-
     let lastNight: boolean | null = null;
     const applyState = (t: number) => {
       const { desks: list, boardCount: count } = live.current;
@@ -521,82 +506,80 @@ export default function OfficeScene({ desks, night, boardCount, anchors, boardAn
         a.root.visible = !away;
         const busy = act === 'kerja' || act === 'laporan';
         const sm = a.screen.material as MeshLambertMaterial;
-        sm.emissive.set(busy ? (act === 'laporan' ? '#7bdff2' : '#66e3a5') : act === 'belajar' ? '#ffd166' : act === 'siaga' ? '#5b4a92' : '#000000');
+        sm.emissive.set(busy ? (act === 'laporan' ? '#7bdff2' : '#66e3a5') : act === 'menunggu' ? '#ffc94d' : act === 'kendala' ? '#ff5a6e' : act === 'belajar' ? '#ffd166' : act === 'siaga' ? '#5b4a92' : '#000000');
         sm.emissiveIntensity = busy ? 0.8 + (reduce ? 0 : 0.2 * Math.sin(t * 9 + a.phase)) : 0.6;
         a.book.visible = act === 'belajar';
-        const lampOn = act === 'belajar' || (isNight && !away);
+        const lampOn = act === 'belajar' || act === 'menunggu' || (isNight && !away);
         a.lamp.visible = lampOn;
         if (a.light) a.light.intensity = lampOn && isNight ? 2.2 : 0;
+        (a.lamp.material as MeshLambertMaterial).emissive.set(act === 'menunggu' ? '#ffb020' : '#ffcf4d');
         const dm = a.deskTop.material as MeshLambertMaterial;
         if (d?.urgent.length) {
           dm.emissive.set('#f3355b');
           dm.emissiveIntensity = reduce ? 0.5 : 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(t * 6));
         } else dm.emissiveIntensity = 0;
 
-        // Seated, or (siaga, cinematic) off to the board, the coffee bar or the sofa and back (lib/office idleAt).
-        let k = 0;
-        let walking = false;
-        let going = true;
-        let spot: IdleSpot = 'meja';
-        if (cinematic && act === 'siaga' && !reduce) {
-          const idle = idleAt(a.key, t);
-          k = idle.k;
-          walking = idle.walking;
-          spot = idle.spot;
-          going = walking && idleAt(a.key, t + 0.05).k >= k;
-        }
-        const standing = k > 0;
-        const slot = (a.index % 3) - 1;
-        if (spot === 'papan') dest.set(BOARD.x + slot * 0.75, 0, Z0 + 1.15);
-        else if (spot === 'kopi') dest.set(-1.0 + slot * 0.45, 0, Z0 + 1.0);
-        else if (spot === 'sofa') dest.set(0.1 + slot * 0.55, 0, 2.2);
-        else dest.copy(a.seat);
-        pathAt(a.seat, dest, k, pos, ahead);
-        a.root.position.copy(pos);
-        const sitting = !standing || (spot === 'sofa' && k === 1);
-        if (standing && walking) {
-          pathAt(a.seat, dest, Math.min(1, Math.max(0, k + (going ? 0.02 : -0.02))), ahead, tmp);
-          const dx = ahead.x - pos.x;
-          const dz = ahead.z - pos.z;
-          if (dx * dx + dz * dz > 1e-8) a.root.rotation.set(0, Math.atan2(-dx, -dz), 0);
-        } else if (spot === 'sofa' && k === 1) a.root.rotation.set(0, Math.PI, 0);
-        else a.root.rotation.set(0, 0, 0);
-        a.root.position.y = spot === 'sofa' && k === 1 ? -0.05 : 0;
-        a.label.set(pos.x, (standing && !sitting ? 1.95 : (cinematic ? 1.75 : 2.1)) + hk * 2, pos.z);
+        // Everyone works from their own desk: no wandering. Small, believable motions only (office.ts fidgetAt).
+        a.root.position.copy(a.seat);
+        a.root.rotation.set(0, 0, 0);
+        a.root.position.y = 0;
+        a.label.set(a.seat.x, (cinematic ? 1.75 : 2.1) + hk * 2, a.seat.z);
+        const fid = act === 'siaga' && !reduce ? fidgetAt(a.key, t) : { fidget: 'layar' as const, k: 0 };
+        a.handMug.visible = fid.fidget === 'minum' && fid.k > 0.15;
+        a.mug.visible = !a.handMug.visible;
         if (reduce) continue;
         const s = Math.sin(t * 9 + a.phase);
-        if (!sitting) {
-          const bob = walking ? 0.03 * Math.abs(s) : 0;
-          a.body.position.y = 0.98 + bob;
-          a.head.position.y = 1.48 + hk + bob;
-          a.armL.position.y = a.armR.position.y = 1.18 + bob;
-          a.legL.position.y = a.legR.position.y = 0.7;
-          a.legL.rotation.set(walking ? 0.6 * s : 0, 0, 0);
-          a.legR.rotation.set(walking ? -0.6 * s : 0, 0, 0);
-          a.armL.rotation.set(walking ? -0.5 * s : 0, 0, 0.08);
-          a.armR.rotation.set(walking ? 0.5 * s : 0, 0, -0.08);
-          a.head.rotation.set(walking ? 0 : -0.15, 0, 0);
+        a.legL.position.y = a.legR.position.y = 0.62;
+        a.legL.rotation.set(-1.4, 0, 0);
+        a.legR.rotation.set(-1.4, 0, 0);
+        a.body.position.y = 0.92;
+        a.body.rotation.set(0, 0, 0);
+        a.head.position.y = 1.42 + hk;
+        a.armL.position.y = a.armR.position.y = 1.12;
+        if (busy) {
+          // Typing: both hands on the keyboard, small head movements toward the screen.
+          a.armL.rotation.set(-1.15 + 0.12 * Math.sin(t * 16 + a.phase), 0, 0.1);
+          a.armR.rotation.set(-1.15 + 0.12 * Math.sin(t * 16 + a.phase + 2), 0, -0.1);
+          a.body.position.y = 0.92 + 0.012 * Math.abs(s);
+          a.head.rotation.set(0.1 + 0.04 * Math.sin(t * 3 + a.phase), 0.08 * Math.sin(t * 1.3 + a.phase), 0);
+        } else if (act === 'menunggu') {
+          // Waiting for the Director: turns toward you and raises a hand now and then.
+          const wave = Math.max(0, Math.sin(t * 0.9 + a.phase));
+          a.armL.rotation.set(-0.5, 0, 0.12);
+          a.armR.rotation.set(-0.6 - 2.3 * wave, 0, -0.15 - 0.25 * wave * Math.sin(t * 7));
+          a.head.rotation.set(-0.05, 0.35, 0);
+          a.body.rotation.set(0, 0.2, 0);
+        } else if (act === 'kendala') {
+          // Stuck: hands on the head, leaning forward.
+          a.armL.rotation.set(-2.35, 0, 0.55);
+          a.armR.rotation.set(-2.35, 0, -0.55);
+          a.head.rotation.set(0.35 + 0.05 * Math.sin(t * 1.5 + a.phase), 0.15 * Math.sin(t * 0.7), 0);
+          a.body.position.y = 0.9;
+        } else if (act === 'belajar') {
+          a.armL.rotation.set(-0.9, 0, 0.2);
+          a.armR.rotation.set(-0.9 + 0.2 * Math.max(0, Math.sin(t * 0.8 + a.phase)), 0, -0.2);
+          a.head.rotation.set(0.38 + 0.04 * Math.sin(t * 1.2 + a.phase), 0.32, 0);
         } else {
-          a.legL.position.y = a.legR.position.y = 0.62;
-          a.legL.rotation.set(-1.4, 0, 0);
-          a.legR.rotation.set(-1.4, 0, 0);
-          a.body.position.y = 0.92;
-          a.head.position.y = 1.42 + hk;
-          a.armL.position.y = a.armR.position.y = 1.12;
-          if (busy) {
-            a.armL.rotation.set(-1.15 + 0.12 * Math.sin(t * 16 + a.phase), 0, 0.1);
-            a.armR.rotation.set(-1.15 + 0.12 * Math.sin(t * 16 + a.phase + 2), 0, -0.1);
-            a.body.position.y = 0.92 + 0.012 * Math.abs(s);
-            a.head.rotation.set(0.1 + 0.04 * Math.sin(t * 3 + a.phase), 0.08 * Math.sin(t * 1.3 + a.phase), 0);
-          } else if (act === 'belajar') {
-            a.armL.rotation.set(-0.9, 0, 0.2);
-            a.armR.rotation.set(-0.9 + 0.2 * Math.max(0, Math.sin(t * 0.8 + a.phase)), 0, -0.2);
-            a.head.rotation.set(0.38 + 0.04 * Math.sin(t * 1.2 + a.phase), 0.32, 0);
-          } else {
-            a.armL.rotation.set(-0.5, 0, 0.12);
-            a.armR.rotation.set(-0.5, 0, -0.12);
-            a.body.position.y = 0.92 + 0.01 * Math.sin(t * 1.6 + a.phase);
-            a.head.rotation.set(0, 0.5 * Math.sin(t * 0.4 + a.phase), 0);
+          // Available: reading the screen, scrolling, with an occasional sip, stretch, glance or note.
+          const k = fid.k;
+          a.armL.rotation.set(-0.95, 0, 0.12);
+          a.armR.rotation.set(-0.95 + 0.06 * Math.sin(t * 2.2 + a.phase), 0, -0.12);
+          a.head.rotation.set(0.05, 0.12 * Math.sin(t * 0.35 + a.phase), 0);
+          a.body.position.y = 0.92 + 0.008 * Math.sin(t * 1.6 + a.phase);
+          if (fid.fidget === 'minum') {
+            a.armR.rotation.set(-0.95 - 1.35 * k, 0, -0.12 - 0.35 * k);
+            a.head.rotation.set(-0.25 * k, 0, 0);
+          } else if (fid.fidget === 'regang') {
+            a.armL.rotation.set(-0.95 - 2.1 * k, 0, 0.12 + 0.25 * k);
+            a.armR.rotation.set(-0.95 - 2.1 * k, 0, -0.12 - 0.25 * k);
+            a.head.rotation.set(-0.3 * k, 0, 0);
+            a.body.position.y = 0.92 + 0.03 * k;
+          } else if (fid.fidget === 'tengok') {
+            a.head.rotation.set(0, (a.index % 2 ? -1 : 1) * 0.9 * k, 0);
+            a.body.rotation.set(0, (a.index % 2 ? -1 : 1) * 0.25 * k, 0);
+          } else if (fid.fidget === 'catat') {
+            a.armR.rotation.set(-0.75 + 0.08 * Math.sin(t * 12), 0, -0.05);
+            a.head.rotation.set(0.35 * k, 0, 0);
           }
         }
       }

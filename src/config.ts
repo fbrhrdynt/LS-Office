@@ -22,9 +22,9 @@ export const TAMPIL_PEMILIH_GAYA = true;
 
 /** Tiga ruangan dari kiri ke kanan. Lebarnya ikut `x0`–`x1` (meter), lantainya `warna`, karpetnya `karpet`. */
 export const RUANGAN = [
-  { key: 'bizdev', label: 'Bizdev', x0: -7, x1: -1.8, warna: '#e9d9c4', karpet: '#e4572e' },
-  { key: 'keuangan', label: 'Keuangan', x0: -1.8, x1: 2, warna: '#efe3cf', karpet: '#f2b134' },
-  { key: 'studio', label: 'Studio', x0: 2, x1: 7, warna: '#e3d6c6', karpet: '#3a86ff' },
+  { key: 'bizdev', label: 'Creative', x0: -7, x1: -1.8, warna: '#e9d9c4', karpet: '#e4572e' },
+  { key: 'keuangan', label: 'Marketing & Analytics', x0: -1.8, x1: 2, warna: '#efe3cf', karpet: '#f2b134' },
+  { key: 'studio', label: 'Web Dev', x0: 2, x1: 7, warna: '#e3d6c6', karpet: '#3a86ff' },
 ] as const;
 export type RoomKey = (typeof RUANGAN)[number]['key'];
 

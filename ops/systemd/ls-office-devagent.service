@@ -1,0 +1,28 @@
+[Unit]
+Description=LogiSource AI Office Web Dev Agent (Claude Code, isolated user)
+After=network.target postgresql.service ls-office-api.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+# Unprivileged user without sudo; cannot read /opt/ls-office secrets or /etc/ls-office/api.env.
+User=ls-office-dev
+Group=ls-office-dev
+WorkingDirectory=/opt/ls-office
+EnvironmentFile=/etc/ls-office/devagent.env
+Environment=HOME=/var/lib/ls-office-dev LS_OFFICE_DEV_DATA=/var/lib/ls-office-dev CLAUDE_BIN=/usr/local/bin/claude-lsai DISABLE_AUTOUPDATER=1
+ExecStart=/usr/bin/node /opt/ls-office/server/devagent.mjs
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=40
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ls-office-dev
+Nice=10
+MemoryMax=1200M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

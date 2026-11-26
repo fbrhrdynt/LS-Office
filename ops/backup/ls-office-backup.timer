@@ -1,0 +1,10 @@
+[Unit]
+Description=Run LS Office backup daily at 02:37 WIB
+
+[Timer]
+OnCalendar=*-*-* 02:37:00 Asia/Jakarta
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

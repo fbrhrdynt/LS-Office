@@ -107,3 +107,5 @@ CREATE TABLE IF NOT EXISTS social_oauth_states (
  created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_social_oauth_states_expiry ON social_oauth_states(expires_at);
+
+-- (moved from index.mjs) OAuth state table already created above.

@@ -1,5 +1,5 @@
 [Unit]
-Description=LogiSource AI Office Agent Worker
+Description=LogiSource AI Office Social Publisher
 After=network.target postgresql.service ls-office-api.service
 Wants=postgresql.service
 
@@ -9,18 +9,21 @@ User=ls-office
 Group=ls-office
 WorkingDirectory=/opt/ls-office
 EnvironmentFile=/etc/ls-office/api.env
-ExecStart=/usr/bin/node /opt/ls-office/server/worker.mjs
+ExecStart=/usr/bin/node /opt/ls-office/server/publisher.mjs
 Restart=on-failure
-RestartSec=8
+RestartSec=15
+TimeoutStopSec=70
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/ls-office
 RestrictSUIDSGID=true
 LockPersonality=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ReadOnlyPaths=/var/lib/ls-office
 MemoryMax=250M
-CPUQuota=40%
+CPUQuota=30%
 
 [Install]
 WantedBy=multi-user.target

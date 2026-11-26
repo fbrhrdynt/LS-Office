@@ -1,0 +1,9 @@
+[Unit]
+Description=LS Office daily backup (database, media, web projects)
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ls-office-backup
+Nice=15
+IOSchedulingClass=idle

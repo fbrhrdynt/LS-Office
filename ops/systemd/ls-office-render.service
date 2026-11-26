@@ -1,0 +1,34 @@
+[Unit]
+Description=LogiSource AI Office Video Render Worker (Remotion + FFmpeg)
+After=network.target postgresql.service ls-office-api.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=ls-office
+Group=ls-office
+WorkingDirectory=/opt/ls-office
+EnvironmentFile=/etc/ls-office/api.env
+Environment=REMOTION_BUNDLE=/opt/ls-office/remotion-build
+ExecStart=/usr/bin/node /opt/ls-office/server/render-worker.mjs
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/ls-office
+# Rendering is heavy: low priority so the other apps on this VPS stay responsive.
+Nice=10
+IOSchedulingClass=idle
+MemoryHigh=1200M
+MemoryMax=1600M
+CPUQuota=150%
+
+[Install]
+WantedBy=multi-user.target

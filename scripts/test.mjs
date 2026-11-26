@@ -43,6 +43,17 @@ t('meja dan Mission Board', () => {
 t('parameter URL', () => {
   assert.deepEqual(O.params(new URLSearchParams('timelapse=1&rekam=1&jam=08.10')), { lapse: true, rec: true, time: '08:10', alwaysWork: true });
 });
+t('status nyata dari backend', () => {
+  assert.equal(O.runtimeDoing({ state: 'working', step: 'Naskah' }).activity, 'kerja');
+  assert.equal(O.runtimeDoing({ state: 'waiting' }).activity, 'menunggu');
+  assert.equal(O.runtimeDoing({ state: 'blocked' }).activity, 'kendala');
+  assert.equal(O.runtimeDoing(undefined).activity, 'siaga');
+});
+t('gerak kecil di meja, tidak berjalan-jalan', () => {
+  const seen = new Set();
+  for (let x = 0; x < 120; x += 0.25) { const f = O.fidgetAt('nadia', x); seen.add(f.fidget); assert.ok(f.k >= 0 && f.k <= 1); }
+  assert.ok(seen.has('layar') && seen.size >= 3);
+});
 const G = (await runnerImport(path.join(root, 'src/gaya/daftar.ts'), { root, configFile: false, cacheDir: path.join(os.tmpdir(), 'kantor-vite'), logLevel: 'error' })).module;
 t('16 gaya + asli, urutan pilihan gaya', () => {
   assert.equal(G.DAFTAR_GAYA.length, 17);
