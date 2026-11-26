@@ -73,6 +73,9 @@ body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; overflow: hidden
   height: 100%;
   display: block;
 }
+/* Interactive 3D camera: drag to orbit, pinch or wheel to zoom. */
+.ko-canvas canvas { cursor: grab; touch-action: none; }
+.ko-canvas canvas:active { cursor: grabbing; }
 .ko-loading {
   position: absolute;
   inset: 0;
