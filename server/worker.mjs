@@ -26,7 +26,7 @@ async function claimWorkflowStep() {
   try {
     await client.query('BEGIN');
     const result = await client.query(`
-      SELECT s.id AS step_id,s.step_key,s.title AS step_title,s.instruction AS step_instruction,s.assignee_id AS step_assignee,
+      SELECT s.id AS step_id,s.step_key,s.title AS step_title,s.instruction AS step_instruction,s.assignee_id AS step_assignee,s.requires_approval,
              t.*,e.system_prompt
       FROM workflow_steps s
       JOIN tasks t ON t.id=s.task_id
@@ -34,7 +34,7 @@ async function claimWorkflowStep() {
       WHERE s.status='pending' AND t.task_type='animated_video' AND t.status IN ('queued','in_progress')
         AND NOT EXISTS (
           SELECT 1 FROM workflow_steps previous
-          WHERE previous.task_id=s.task_id AND previous.step_order<s.step_order AND previous.status<>'completed'
+          WHERE previous.task_id=s.task_id AND previous.step_order<s.step_order AND previous.status NOT IN ('completed','skipped')
         )
       ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,t.created_at,s.step_order
       LIMIT 1 FOR UPDATE OF s,t SKIP LOCKED
@@ -167,13 +167,19 @@ async function executeWorkflowStep(task) {
   }
 
   await pool.query("UPDATE task_runs SET status='succeeded',output_text=$2,finished_at=now() WHERE id=$1", [task.runId, output]);
-  await pool.query("UPDATE workflow_steps SET status='completed',output_text=$2,finished_at=now() WHERE id=$1", [task.step_id, output]);
-  const pending = await pool.query("SELECT count(*)::int AS count FROM workflow_steps WHERE task_id=$1 AND status<>'completed'", [task.id]);
-  if (pending.rows[0].count === 0) {
+  const nextStepStatus = task.requires_approval ? 'awaiting_approval' : 'completed';
+  await pool.query('UPDATE workflow_steps SET status=$2,output_text=$3,finished_at=now() WHERE id=$1', [task.step_id, nextStepStatus, output]);
+  if (task.requires_approval) {
     await pool.query("UPDATE tasks SET status='review',updated_at=now() WHERE id=$1", [task.id]);
-    await pool.query("INSERT INTO task_events(task_id,event_type) VALUES($1,'task_ready_for_review')", [task.id]);
+    await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'director_checkpoint_ready',$2)", [task.id, JSON.stringify({ stepKey: task.step_key })]);
   } else {
-    await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'workflow_step_completed',$2)", [task.id, JSON.stringify({ stepKey: task.step_key, nextStepPending: true })]);
+    const pending = await pool.query("SELECT count(*)::int AS count FROM workflow_steps WHERE task_id=$1 AND status NOT IN ('completed','skipped')", [task.id]);
+    if (pending.rows[0].count === 0) {
+      await pool.query("UPDATE tasks SET status='review',updated_at=now() WHERE id=$1", [task.id]);
+      await pool.query("INSERT INTO task_events(task_id,event_type) VALUES($1,'task_ready_for_review')", [task.id]);
+    } else {
+      await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'workflow_step_completed',$2)", [task.id, JSON.stringify({ stepKey: task.step_key, nextStepPending: true })]);
+    }
   }
 }
 
