@@ -123,14 +123,32 @@ const server = http.createServer(async (req, res) => {
     if (m && m[2] === 'approval' && req.method === 'POST') {
       const b = await body(req);
       if (!['approved', 'changes_requested', 'rejected'].includes(b.decision)) return json(res, 400, { error: 'Invalid decision' });
-      const task = await pool.query('SELECT task_type,artifact_path,reviewer_id FROM tasks WHERE id=$1 AND status=$2', [m[1], 'review']);
-      if (!task.rowCount || task.rows[0].reviewer_id !== b.reviewerId) return json(res, 409, { error: 'Task not in review or reviewer mismatch' });
-      if (b.decision === 'approved' && task.rows[0].task_type === 'animated_video' && !task.rows[0].artifact_path) return json(res, 409, { error: 'Cannot complete video task: rendered MP4 is missing' });
-      const status = b.decision === 'approved' ? 'completed' : b.decision;
-      const v = await pool.query('UPDATE tasks SET status=$2,updated_at=now() WHERE id=$1 AND status=\'review\' RETURNING id', [m[1], status]);
-      if (!v.rowCount) return json(res, 409, { error: 'Task state changed; refresh and retry' });
-      await pool.query('INSERT INTO task_events(task_id,event_type,payload) VALUES($1,$2,$3)', [m[1], 'review_' + b.decision, JSON.stringify({ notes: String(b.notes || '').slice(0, 2000) })]);
-      return json(res, 200, { ok: true, status });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const task = await client.query('SELECT task_type,artifact_path,reviewer_id FROM tasks WHERE id=$1 AND status=$2 FOR UPDATE', [m[1], 'review']);
+        if (!task.rowCount || task.rows[0].reviewer_id !== 'alex' || b.reviewerId !== 'alex') {
+          await client.query('ROLLBACK');
+          return json(res, 409, { error: 'Task not in Director review or reviewer mismatch' });
+        }
+        if (b.decision === 'approved' && task.rows[0].task_type === 'animated_video' && !task.rows[0].artifact_path) {
+          await client.query('ROLLBACK');
+          return json(res, 409, { error: 'Cannot complete video task: rendered MP4 is missing' });
+        }
+        let status;
+        if (b.decision === 'approved') status = 'completed';
+        else if (b.decision === 'rejected') status = 'rejected';
+        else status = task.rows[0].task_type === 'animated_video' ? 'queued' : 'changes_requested';
+        const restartWorkflow = b.decision === 'changes_requested' && task.rows[0].task_type === 'animated_video';
+        await client.query('UPDATE tasks SET status=$2,artifact_path=CASE WHEN $3 THEN NULL ELSE artifact_path END,artifact_mime=CASE WHEN $3 THEN NULL ELSE artifact_mime END,artifact_name=CASE WHEN $3 THEN NULL ELSE artifact_name END,updated_at=now() WHERE id=$1', [m[1], status, restartWorkflow]);
+        if (restartWorkflow) await client.query("UPDATE workflow_steps SET status='pending',output_text=NULL,started_at=NULL,finished_at=NULL WHERE task_id=$1", [m[1]]);
+        await client.query('INSERT INTO task_events(task_id,event_type,payload) VALUES($1,$2,$3)', [m[1], 'review_' + b.decision, JSON.stringify({ notes: String(b.notes || '').slice(0, 2000), workflowRestarted: restartWorkflow })]);
+        await client.query('COMMIT');
+        return json(res, 200, { ok: true, status, workflowRestarted: restartWorkflow });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      } finally { client.release(); }
     }
     return json(res, 404, { error: 'Not found' });
   } catch (e) {
