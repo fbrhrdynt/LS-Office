@@ -54,3 +54,13 @@ Animated-video tasks are owned by Ethan as Creative Director and are decomposed 
 Adrian is not inserted into pre-publication production because performance analysis requires actual post-publication metrics. An analytics task should be created after verified performance data is available. The Director receives the parent task for final approval after every workflow step completes. A task cannot enter review while a workflow step remains incomplete.
 
 Workflow steps are created atomically with the parent task. Their assignee, status, handoff output and timestamps are persisted and returned by GET /api/tasks/:id.
+
+
+## Director approval gates and social publishing queue
+
+- Nadia's research step pauses in `awaiting_approval`; no downstream employee runs until the Director approves it.
+- A revision request re-queues only the current checkpoint owner. Reject skips remaining workflow steps and terminates the task.
+- After Nadia is approved, Felix, Ethan, Maya, Production Engine and Daren execute sequentially.
+- Olivier prepares platform-specific distribution material and pauses for the final Director approval.
+- Final approval creates one publication job each for Instagram, TikTok, YouTube and Facebook. The jobs are persisted as `awaiting_connection`; the task detail view shows this state.
+- Important: the current implementation creates the publication queue but does not upload or publish media yet. Actual publishing requires official OAuth/app credentials, platform-specific upload flows, and a publicly reachable media URL or platform upload session. Do not mark a post as published until the platform returns a verified post ID/URL.
