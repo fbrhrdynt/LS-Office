@@ -87,21 +87,21 @@ async function callTextAgent(task, systemPrompt, instruction, context) {
       model,
       max_output_tokens: Number(process.env.MAX_OUTPUT_TOKENS || 2200),
       input: [
-        { role: 'system', content: systemPrompt + '\\nIkuti job description dan batas kewenanganmu. Jangan mengerjakan peran personnel lain. Jangan mengarang sumber, angka, progres, atau hasil. Laporkan hasil, kendala, dan handoff secara jelas.' },
-        { role: 'user', content: 'Task: ' + task.title + '\\nBrief utama: ' + task.instruction + '\\nAcceptance criteria: ' + (task.acceptance_criteria || 'Hasil akurat, lengkap, dapat diperiksa.') + '\\nInstruksi tahap: ' + instruction + '\\n\\nKonteks dan hasil tahap sebelumnya:\\n' + context }
+        { role: 'system', content: systemPrompt + '\nIkuti job description dan batas kewenanganmu. Jangan mengerjakan peran personnel lain. Jangan mengarang sumber, angka, progres, atau hasil. Laporkan hasil, kendala, dan handoff secara jelas.' },
+        { role: 'user', content: 'Task: ' + task.title + '\nBrief utama: ' + task.instruction + '\nAcceptance criteria: ' + (task.acceptance_criteria || 'Hasil akurat, lengkap, dapat diperiksa.') + '\nInstruksi tahap: ' + instruction + '\n\nKonteks dan hasil tahap sebelumnya:\n' + context }
       ]
     })
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message || 'OpenAI API HTTP ' + response.status);
-  const output = (data.output || []).flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text).join('\\n');
+  const output = (data.output || []).flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text).join('\n');
   if (!output) throw new Error('Empty model output');
   return { output, inputTokens: data.usage?.input_tokens || 0, outputTokens: data.usage?.output_tokens || 0 };
 }
 
 async function workflowContext(task) {
   const result = await pool.query('SELECT step_key,title,output_text FROM workflow_steps WHERE task_id=$1 AND status=\'completed\' ORDER BY step_order', [task.id]);
-  return result.rows.map(step => '### ' + step.title + ' (' + step.step_key + ')\\n' + (step.output_text || '')).join('\\n\\n');
+  return result.rows.map(step => '### ' + step.title + ' (' + step.step_key + ')\n' + (step.output_text || '')).join('\n\n');
 }
 
 async function executeWorkflowStep(task) {
@@ -124,7 +124,7 @@ async function executeWorkflowStep(task) {
     const audioStream = (probe.streams || []).find(stream => stream.codec_type === 'audio');
     const duration = Number(probe.format?.duration || 0);
     if (!videoStream || !audioStream || duration < 5 || videoStream.width !== 720 || videoStream.height !== 1280) throw new Error('QA gagal: stream video/audio, durasi, atau resolusi tidak sesuai');
-    output = 'QA PASS\\nFile: ' + result.rows[0].artifact_name + '\\nSize: ' + info.size + ' bytes\\nDuration: ' + duration.toFixed(2) + ' seconds\\nVideo: ' + videoStream.codec_name + ' ' + videoStream.width + 'x' + videoStream.height + '\\nAudio: ' + audioStream.codec_name;
+    output = 'QA PASS\nFile: ' + result.rows[0].artifact_name + '\nSize: ' + info.size + ' bytes\nDuration: ' + duration.toFixed(2) + ' seconds\nVideo: ' + videoStream.codec_name + ' ' + videoStream.width + 'x' + videoStream.height + '\nAudio: ' + audioStream.codec_name;
   } else {
     if (!task.system_prompt) throw new Error('Employee prompt not found for workflow step ' + task.step_key);
     const result = await callTextAgent(task, task.system_prompt, task.step_instruction, context);
