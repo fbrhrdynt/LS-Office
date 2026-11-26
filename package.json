@@ -11,7 +11,8 @@
     "rekam": "node scripts/rekam.mjs",
     "api": "node server/index.mjs",
     "worker": "node server/worker.mjs",
-    "test:workflow": "node scripts/test-workflow.mjs"
+    "test:workflow": "node scripts/test-workflow.mjs",
+    "test:social-oauth": "node scripts/test-social-oauth.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",
