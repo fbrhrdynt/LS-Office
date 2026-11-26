@@ -84,15 +84,23 @@ const server = http.createServer(async (req, res) => {
       const assigneeId = taskType === 'animated_video' ? 'ethan' : b.assigneeId;
       const a = await pool.query('SELECT id FROM employees WHERE id=$1 AND active AND id<>$2', [assigneeId, 'alex']);
       if (!a.rowCount) return json(res, 400, { error: 'Invalid assignee' });
-      const v = await pool.query("INSERT INTO tasks(title,instruction,acceptance_criteria,assignee_id,reviewer_id,priority,status,task_type) VALUES($1,$2,$3,$4,$5,$6,'queued',$7) RETURNING *", [b.title.trim(), b.instruction.trim(), String(b.acceptanceCriteria || '').slice(0, 5000), assigneeId, b.reviewerId || 'alex', ['low', 'normal', 'high', 'urgent'].includes(b.priority) ? b.priority : 'normal', taskType]);
-      if (taskType === 'animated_video') {
-        for (let i = 0; i < VIDEO_WORKFLOW.length; i++) {
-          const step = VIDEO_WORKFLOW[i];
-          await pool.query('INSERT INTO workflow_steps(task_id,step_order,step_key,assignee_id,title,instruction) VALUES($1,$2,$3,$4,$5,$6)', [v.rows[0].id, i + 1, step.key, step.employeeId, step.title, step.instruction]);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const v = await client.query("INSERT INTO tasks(title,instruction,acceptance_criteria,assignee_id,reviewer_id,priority,status,task_type) VALUES($1,$2,$3,$4,$5,$6,'queued',$7) RETURNING *", [b.title.trim(), b.instruction.trim(), String(b.acceptanceCriteria || '').slice(0, 5000), assigneeId, b.reviewerId || 'alex', ['low', 'normal', 'high', 'urgent'].includes(b.priority) ? b.priority : 'normal', taskType]);
+        if (taskType === 'animated_video') {
+          for (let i = 0; i < VIDEO_WORKFLOW.length; i++) {
+            const step = VIDEO_WORKFLOW[i];
+            await client.query('INSERT INTO workflow_steps(task_id,step_order,step_key,assignee_id,title,instruction) VALUES($1,$2,$3,$4,$5,$6)', [v.rows[0].id, i + 1, step.key, step.employeeId, step.title, step.instruction]);
+          }
         }
-      }
-      await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'task_created',$2)", [v.rows[0].id, JSON.stringify({ assigneeId, taskType, workflow: taskType === 'animated_video' })]);
-      return json(res, 201, { task: v.rows[0] });
+        await client.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'task_created',$2)", [v.rows[0].id, JSON.stringify({ assigneeId, taskType, workflow: taskType === 'animated_video' })]);
+        await client.query('COMMIT');
+        return json(res, 201, { task: v.rows[0] });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally { client.release(); }
     }
     const m = route.match(/^\/api\/tasks\/([0-9a-f-]+)(?:\/(approval|video))?$/i);
     if (m && req.method === 'GET' && !m[2]) {
