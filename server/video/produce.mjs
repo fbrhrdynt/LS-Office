@@ -47,10 +47,19 @@ export function cleanNarration(text) {
     .trim();
 }
 /** Sentences that are production directions, not narration. */
-export const CUE_SENTENCE = /^\s*(visual|tampilkan|perlihatkan|zoom|cut|b-roll|sfx|musik|transisi|kamera|hook cepat|on-screen|teks layar)\b/i;
+export const CUE_SENTENCE = /^\s*(visual|tampilkan|perlihatkan|zoom|cut|b-roll|sfx|musik|transisi|kamera|hook cepat|on-screen|teks layar|close[- ]?up|extreme close|wide shot|medium shot|long shot|establishing|insert|pov|slow[- ]?motion|shot|frame|angle|pan|tilt|overlay|layar hp menampilkan|layar menampilkan)\b/i;
 const CUE_LABEL = /^\s*(penjelasan singkat|catatan penting|catatan|cta|hook|narasi|vo|voice-over|penutup)\s*:\s*/i;
 /** True if a narration line still contains directions (used to reject and self-correct agent output). */
-export const hasCues = (text) => /\b(visual|catatan|arahan|b-roll|sfx|on-screen)\s*:/i.test(text) || String(text).split(/(?<=[.!?])\s+/).some((x) => CUE_SENTENCE.test(x));
+export const hasCues = (text) => /\b(visual|catatan|arahan|b-roll|sfx|on-screen)\s*:/i.test(text) || /\b(close[- ]?up|wide shot|medium shot|slow[- ]?motion)\b/i.test(text) || String(text).split(/(?<=[.!?])\s+/).some((x) => CUE_SENTENCE.test(x));
+
+const said0 = (board, audio) => spokenText(board.scenes[0].narration, audio.pronunciations).split(/(?<=[.!?])\s+/)[0].slice(0, 120);
+/** Turns provider errors into something the Director can act on. */
+export function friendlyVoiceError(e, voice) {
+  const m = String(e.message || e);
+  if (/free users cannot use library voices/i.test(m)) return 'Suara "' + (voice || '?') + '" adalah suara Voice Library: paket ElevenLabs gratis tidak boleh memakainya lewat API. Upgrade paket ElevenLabs, atau pakai suara milik sendiri/bawaan. (' + m.slice(0, 200) + ')';
+  if (/quota|credits|insufficient/i.test(m)) return 'Kuota karakter ElevenLabs habis. Tambah kuota/upgrade paket lalu klik Ulangi. (' + m.slice(0, 200) + ')';
+  return m;
+}
 
 /** Caption words: the script's own spelling when the transcript has the same word count, else the transcript. */
 export function alignWords(narration, transcript, offset) {
@@ -153,14 +162,20 @@ export async function produceVideo(job, { pool, signal }) {
   // 2. Voice-over per scene, so scene timing follows the real audio.
   const eleven = config.ttsProvider === 'elevenlabs';
   let voiceId = null;
+  let voiceName = null;
   if (eleven) {
     if (series?.voice_id) voiceId = series.voice_id;
     else {
       const voices = await listElevenVoices();
       voiceId = voices.find((v) => v.name === audio.voice)?.id || config.elevenVoiceId || narrationVoices(voices)[0]?.id;
       if (!voiceId) throw new Error('Tidak ada suara ElevenLabs yang bisa dipakai');
-      if (series) await pool.query('UPDATE series SET voice_id=$2,voice_name=$3,updated_at=now() WHERE id=$1 AND voice_id IS NULL', [series.id, voiceId, voices.find((v) => v.id === voiceId)?.name || audio.voice]);
+      voiceName = voices.find((v) => v.id === voiceId)?.name || audio.voice;
     }
+  }
+  if (eleven && series && !series.voice_id) {
+    // Lock the series voice only once it has actually produced audio (a voice the plan cannot use must not stick).
+    await speakEleven({ text: said0(board, audio), voiceId, ctx }).catch((e) => { throw new Error(friendlyVoiceError(e, voiceName)); });
+    await pool.query('UPDATE series SET voice_id=$2,voice_name=$3,updated_at=now() WHERE id=$1 AND voice_id IS NULL', [series.id, voiceId, voiceName]);
   }
   const voiceKey = eleven ? 'eleven|' + config.elevenModel + '|' + voiceId + '|' + config.elevenSpeed : audio.voice + '|' + audio.instructions + '|' + config.ttsModel;
   const said = board.scenes.map((scene) => spokenText(scene.narration, audio.pronunciations));
@@ -169,7 +184,7 @@ export async function produceVideo(job, { pool, signal }) {
     const timing = file.replace(/\.mp3$/, '.words.json');
     if (!(await exists(file))) {
       if (eleven) {
-        const r = await speakEleven({ text: said[i], voiceId, previousText: said[i - 1] || '', nextText: said[i + 1] || '', ctx });
+        const r = await speakEleven({ text: said[i], voiceId, previousText: said[i - 1] || '', nextText: said[i + 1] || '', ctx }).catch((e) => { throw new Error(friendlyVoiceError(e, voiceName || series?.voice_name)); });
         await writeFile(timing, JSON.stringify(r.words));
         await writeFile(file, r.bytes);
       } else {

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { runnerImport } from 'vite';
 import { VIDEO_WORKFLOW, WEB_BUILD_WORKFLOW, WEB_UPDATE_WORKFLOW, STORY_SERIES_WORKFLOW, STORY_EPISODE_WORKFLOW, SCHEMAS, stepDef } from '../server/workflows.mjs';
 import { buildPublishPlan, parseLocal } from '../server/lib/engine.mjs';
-import { cleanNarration, alignWords, spokenText, evenWords } from '../server/video/produce.mjs';
+import { cleanNarration, alignWords, spokenText, evenWords, hasCues, friendlyVoiceError } from '../server/video/produce.mjs';
 import { formatOutput } from '../server/lib/format.mjs';
 import { alignmentToWords, narrationVoices } from '../server/lib/ai.mjs';
 
@@ -46,6 +46,8 @@ t('structured outputs use strict-compatible schemas', () => {
 });
 t('narration: stage notes are never read aloud', () => {
   assert.equal(cleanNarration('Adegan 2: "Arus terfokus ke benda kerja. (fakta: las basah)" [zoom]'), 'Arus terfokus ke benda kerja.');
+  assert.equal(cleanNarration('Rumah itu kosong. Close up menunjukan tekstur dan noda.'), 'Rumah itu kosong.');
+  assert.ok(hasCues('Close up menunjukan tekstur dan noda.'));
   assert.equal(spokenText('Suhu 4.000 °C', [{ written: '4.000 °C', spoken: 'empat ribu derajat celcius' }]), 'Suhu empat ribu derajat celcius');
 });
 t('captions keep the script spelling when word counts match', () => {
@@ -74,6 +76,9 @@ t('ElevenLabs character timing becomes word timing', () => {
   const words = alignmentToWords({ characters: c, character_start_times_seconds: c.map((_, i) => i * 0.05), character_end_times_seconds: c.map((_, i) => i * 0.05 + 0.05) });
   assert.deepEqual(words.map((w) => w.word), ['Gaji', 'Dina', 'habis,', 'cuma', 'lima', 'puluh', 'ribu.']);
   assert.ok(words.every((w, i) => w.end > w.start && (i === 0 || w.start >= words[i - 1].end)));
+});
+t('voice errors are explained in Indonesian', () => {
+  assert.match(friendlyVoiceError(new Error('ElevenLabs: Free users cannot use library voices via the API.'), 'Indah'), /Upgrade paket ElevenLabs/);
 });
 t('Indonesian voices are preferred for narration', () => {
   const v = [{ name: 'Bella', labels: { language: 'en' } }, { name: 'Putra', labels: { language: 'id' } }, { name: 'Indah', labels: { locale: 'id-ID' } }];

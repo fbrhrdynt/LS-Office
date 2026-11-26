@@ -114,6 +114,7 @@ Aturan kerja: kembangkan di branch/worktree terpisah dan database dev (salinan d
 
 | Tanggal | Perubahan |
 |---|---|
+| 2026-11-27 | Perbaikan dari Part 1 "Rumah Waris": suara seri baru dikunci setelah audio berhasil dibuat; istilah kamera (close up, shot, dll.) tidak pernah dibacakan; naskah cerita bergaya realistis (bukan dongeng); pesan error ElevenLabs (paket gratis/kuota) jelas dan bisa ditindaklanjuti. |
 | 2026-11-27 | Suara Indonesia diprioritaskan: bila akun ElevenLabs punya suara berbahasa Indonesia (saat ini Putra, Yudo, Bram, Indah), Maya hanya memilih dari suara-suara itu. |
 | 2026-11-27 | Suara pakai ElevenLabs (`eleven_multilingual_v2`): Maya memilih dari suara yang ada di akun, satu suara dikunci per seri, timing caption langsung dari ElevenLabs (tanpa Whisper). Tanpa `ELEVENLABS_API_KEY` otomatis kembali ke OpenAI TTS. |
 | 2026-11-27 | Cerita bersambung: alur seri (ide Nadia → rancangan Felix → desain tokoh Ethan), episode otomatis per part, character sheet sebagai referensi gambar (tokoh konsisten), template Remotion "story" (badge PART, layar chat/saldo, caption bawah, "Bersambung"), tab Studio → Seri cerita, Telegram `/cerita`. |
