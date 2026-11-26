@@ -31,6 +31,8 @@ jobs:
           node --check server/workflows.mjs
       - name: Workflow routing tests
         run: npm run test:workflow
+      - name: Social OAuth security tests
+        run: npm run test:social-oauth
       - name: Existing application tests
         run: npm test
       - name: Production build
