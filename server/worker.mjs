@@ -155,10 +155,13 @@ async function processOne() {
   busy = true;
   let task = null;
   try {
+    const daily = await pool.query("SELECT count(*)::int AS n FROM task_runs WHERE started_at>=date_trunc('day',now())");
+    if (daily.rows[0].n >= limit) {
+      console.warn('Daily run limit reached; queue remains untouched');
+      return;
+    }
     task = await claim();
     if (!task) return;
-    const daily = await pool.query("SELECT count(*)::int AS n FROM task_runs WHERE started_at>=date_trunc('day',now())");
-    if (daily.rows[0].n > limit) throw new Error('Daily run limit reached');
     if (task.workflow) await executeWorkflowStep(task);
     else await executeRegularTask(task);
   } catch (error) {
