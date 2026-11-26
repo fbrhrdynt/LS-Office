@@ -377,21 +377,82 @@ export default function OfficeScene({ desks, night, boardCount, anchors, boardAn
     const aimA = new Vector3();
     const aimB = new Vector3();
     const look = new Vector3();
+    // Manual orbit controls: drag/swipe to rotate, wheel/pinch to zoom, double-click to reset.
+    let orbitYaw = 0;
+    let orbitPitch = 0;
+    let userZoom = 1;
+    let userControlled = false;
+    const pointers = new Map<number, { x: number; y: number }>();
+    let pinchDistance = 0;
+    const canvas = renderer.domElement;
+    const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+    const pointerDown = (event: PointerEvent) => {
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      canvas.setPointerCapture(event.pointerId);
+      if (pointers.size === 2) {
+        const pts = [...pointers.values()];
+        pinchDistance = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
+      }
+    };
+    const pointerMove = (event: PointerEvent) => {
+      const previous = pointers.get(event.pointerId);
+      if (!previous) return;
+      const dx = event.clientX - previous.x;
+      const dy = event.clientY - previous.y;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pointers.size >= 2) {
+        const pts = [...pointers.values()];
+        const distance = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
+        if (pinchDistance > 0 && distance > 0) userZoom = clamp(userZoom * distance / pinchDistance, 0.65, 2.4);
+        pinchDistance = distance;
+      } else if (Math.abs(dx) + Math.abs(dy) > 0) {
+        orbitYaw += dx * 0.008;
+        orbitPitch = clamp(orbitPitch + dy * 0.006, -0.42, 0.72);
+      }
+      userControlled = true;
+      live.current.dirty = true;
+    };
+    const pointerUp = (event: PointerEvent) => {
+      pointers.delete(event.pointerId);
+      if (pointers.size < 2) pinchDistance = 0;
+    };
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault();
+      userZoom = clamp(userZoom * Math.exp(-event.deltaY * 0.001), 0.65, 2.4);
+      userControlled = true;
+      live.current.dirty = true;
+    };
+    const resetOrbit = () => {
+      orbitYaw = 0;
+      orbitPitch = 0;
+      userZoom = 1;
+      userControlled = false;
+      live.current.dirty = true;
+    };
+    canvas.addEventListener('pointerdown', pointerDown);
+    canvas.addEventListener('pointermove', pointerMove);
+    canvas.addEventListener('pointerup', pointerUp);
+    canvas.addEventListener('pointercancel', pointerUp);
+    canvas.addEventListener('wheel', wheel, { passive: false });
+    canvas.addEventListener('dblclick', resetOrbit);
+
     const placeCamera = (t: number) => {
       const swing = reduce ? 0 : cinematic ? (portrait ? 0.14 : 0.32) * Math.sin(t * 0.21) : 0.03 * Math.sin(t * 0.15);
-      const a = (portrait ? 1.15 : Math.PI / 4) + swing;
-      let zoom = 1;
+      const a = (portrait ? 1.15 : Math.PI / 4) + (userControlled ? 0 : swing) + orbitYaw;
+      let zoom = userZoom;
       look.copy(home);
-      if (cinematic && !reduce) {
+      if (cinematic && !reduce && !userControlled) {
         const i = Math.floor(t / SHOT);
         const zA = shotAim(i - 1, aimA);
         const zB = shotAim(i, aimB);
         const f = Math.min(1, (t - i * SHOT) / 1.1);
         const e = f * f * (3 - 2 * f);
         look.copy(aimA).lerp(aimB, e);
-        zoom = (zA + (zB - zA) * e) * (1 + 0.03 * Math.sin(t * 0.5));
+        zoom *= (zA + (zB - zA) * e) * (1 + 0.03 * Math.sin(t * 0.5));
       }
-      camera.position.set(look.x + 17 * Math.sin(a), look.y + 13.5, look.z + 17 * Math.cos(a));
+      const elevation = clamp(Math.atan2(13.5, Math.sqrt(17 * 17 + 17 * 17)) + orbitPitch, 0.08, 1.25);
+      const horizontal = 17 * Math.SQRT2 * Math.cos(elevation);
+      camera.position.set(look.x + horizontal * Math.sin(a), look.y + 17 * Math.SQRT2 * Math.sin(elevation), look.z + horizontal * Math.cos(a));
       camera.lookAt(look);
       if (camera.zoom !== zoom) {
         camera.zoom = zoom;
@@ -595,6 +656,12 @@ export default function OfficeScene({ desks, night, boardCount, anchors, boardAn
       io.disconnect();
       ro.disconnect();
       document.removeEventListener('visibilitychange', onVis);
+      canvas.removeEventListener('pointerdown', pointerDown);
+      canvas.removeEventListener('pointermove', pointerMove);
+      canvas.removeEventListener('pointerup', pointerUp);
+      canvas.removeEventListener('pointercancel', pointerUp);
+      canvas.removeEventListener('wheel', wheel);
+      canvas.removeEventListener('dblclick', resetOrbit);
       for (const d of disposables) d.dispose();
       K.dispose();
       renderer.dispose();
