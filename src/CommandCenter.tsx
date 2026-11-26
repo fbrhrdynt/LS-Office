@@ -3,6 +3,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 type Employee = { id: string; name: string; role: string; department: string; managerKey: string | null };
 type Task = { id: string; title: string; instruction: string; assignee_id: string; reviewer_id: string | null; priority: string; status: string; task_type?: string; artifact_path?: string | null; artifact_name?: string | null; assignee_name?: string; created_at: string };
 type Run = { id: string; status: string; output_text?: string; error_message?: string };
+type WorkflowStep = { id: string; step_order: number; step_key: string; title: string; status: string; assignee_name?: string | null; output_text?: string | null };
 type Overview = { counts: Record<string, number>; recent: Array<{ id: number; taskId: string; type: string; createdAt: string; title?: string }> };
 const labels: Record<string, string> = { queued: 'Queued', assigned: 'Assigned', in_progress: 'Working', review: 'Review', completed: 'Completed', failed: 'Failed', blocked: 'Blocked', changes_requested: 'Changes requested', rejected: 'Rejected', cancelled: 'Cancelled' };
 
@@ -22,7 +23,7 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
   const [criteria, setCriteria] = useState('');
   const [priority, setPriority] = useState('normal');
   const [busy, setBusy] = useState(false);
-  const [detail, setDetail] = useState<{ task: Task; runs: Run[] } | null>(null);
+  const [detail, setDetail] = useState<{ task: Task; runs: Run[]; workflowSteps: WorkflowStep[] } | null>(null);
   const [notes, setNotes] = useState('');
 
   const request = useCallback(async (path: string, init: RequestInit = {}) => {
@@ -81,7 +82,7 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
   };
 
   const openTask = async (id: string) => {
-    try { const d = await request('/tasks/' + id); setDetail({ task: d.task, runs: d.runs || [] }); }
+    try { const d = await request('/tasks/' + id); setDetail({ task: d.task, runs: d.runs || [], workflowSteps: d.workflowSteps || [] }); }
     catch (e) { setError(e instanceof Error ? e.message : 'Gagal membuka task'); }
   };
 
@@ -114,7 +115,7 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
       <div className="cc-workspace"><div className="cc-compose"><div className="cc-tabs"><button type="button" className={mode === 'chat' ? 'active' : ''} onClick={() => setMode('chat')}>Chat Command</button><button type="button" className={mode === 'assign' ? 'active' : ''} onClick={() => setMode('assign')}>Task Assignment</button></div>
         <form onSubmit={create}>
           <label>Deliverable<select value={taskType} onChange={e => setTaskType(e.target.value as 'text' | 'animated_video')}><option value="text">Text / Research</option><option value="animated_video">Animated drama video (MP4)</option></select></label>
-          <label>Assignee<select value={assignee} onChange={e => setAssignee(e.target.value)}>{employees.map(x => <option key={x.id} value={x.id}>{x.name} · {x.department}</option>)}</select></label>
+          <label>{taskType === 'animated_video' ? 'Workflow coordinator' : 'Assignee'}<select value={taskType === 'animated_video' ? 'ethan' : assignee} disabled={taskType === 'animated_video'} onChange={e => setAssignee(e.target.value)}>{employees.map(x => <option key={x.id} value={x.id}>{x.name} · {x.department}</option>)}</select></label>
           {mode === 'assign' && <label>Task title<input required maxLength={160} value={title} onChange={e => setTitle(e.target.value)} placeholder="Drama animasi: Rahasia di Balik Hujan" /></label>}
           <label>{mode === 'chat' ? 'Instruksi chat' : 'Detail instruksi'}<textarea required rows={5} maxLength={12000} value={instruction} onChange={e => setInstruction(e.target.value)} placeholder={taskType === 'animated_video' ? 'Ceritakan drama animasi yang ingin diproduksi…' : 'Tuliskan pekerjaan dan output yang diharapkan…'} /></label>
           {mode === 'assign' && <label>Acceptance criteria<textarea rows={2} maxLength={5000} value={criteria} onChange={e => setCriteria(e.target.value)} /></label>}
@@ -123,7 +124,7 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
         <small className="cc-note">{taskType === 'animated_video' ? 'Video diproses menjadi MP4 animasi motion-comic; task hanya bisa complete setelah file video berhasil dibuat.' : 'Task tersimpan di PostgreSQL dan diproses oleh AI worker.'}</small>
       </div>
       <div className="cc-task-list"><div className="cc-list-head"><h3>Task queue</h3><button type="button" onClick={() => void refresh()}>Refresh</button></div>{tasks.length === 0 ? <p className="cc-empty">Belum ada task.</p> : tasks.map(t => <button type="button" className="cc-task" key={t.id} onClick={() => void openTask(t.id)}><span><b>{t.title}</b><small>{t.assignee_name || t.assignee_id} · {new Date(t.created_at).toLocaleString('id-ID')}</small></span><em data-status={t.status}>{t.task_type === 'animated_video' ? '🎬 ' : ''}{labels[t.status] || t.status}</em></button>)}</div></div>
-      {detail && <div className="cc-detail"><div className="cc-list-head"><h3>{detail.task.title}</h3><button type="button" onClick={() => setDetail(null)}>Close</button></div><p>{detail.task.instruction}</p>{detail.runs.map(r => <article className="cc-output" key={r.id}><b>Run · {r.status}</b>{r.output_text ? <pre>{r.output_text}</pre> : <p>{r.error_message || 'Belum ada output.'}</p>}</article>)}{detail.task.task_type === 'animated_video' && detail.task.artifact_path && <button type="button" onClick={() => void downloadVideo(detail.task)}>Download MP4</button>}{detail.task.status === 'review' && <div className="cc-review"><label>Review notes<textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></label><div><button onClick={() => void decide('approved')}>Approve</button><button onClick={() => void decide('changes_requested')}>Request changes</button><button onClick={() => void decide('rejected')}>Reject</button></div></div>}</div>}
+      {detail && <div className="cc-detail"><div className="cc-list-head"><h3>{detail.task.title}</h3><button type="button" onClick={() => setDetail(null)}>Close</button></div><p>{detail.task.instruction}</p>{detail.workflowSteps.length > 0 && <section className="cc-workflow"><h4>Production workflow</h4>{detail.workflowSteps.map(step => <article key={step.id} className="cc-workflow-step"><div><b>{step.step_order}. {step.title}</b><small>{step.assignee_name || 'Production Engine'}</small></div><em data-status={step.status}>{step.status}</em>{step.output_text && <details><summary>Hasil handoff</summary><pre>{step.output_text}</pre></details>}</article>)}</section>}{detail.runs.map(r => <article className="cc-output" key={r.id}><b>Run · {r.status}</b>{r.output_text ? <pre>{r.output_text}</pre> : <p>{r.error_message || 'Belum ada output.'}</p>}</article>)}{detail.task.task_type === 'animated_video' && detail.task.artifact_path && <button type="button" onClick={() => void downloadVideo(detail.task)}>Download MP4</button>}{detail.task.status === 'review' && <div className="cc-review"><label>Review notes<textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></label><div><button onClick={() => void decide('approved')}>Approve</button><button onClick={() => void decide('changes_requested')}>Request changes</button><button onClick={() => void decide('rejected')}>Reject</button></div></div>}</div>}
       <div className="cc-events"><h3>Recent activity</h3>{overview.recent.slice(0, 8).map(x => <div key={x.id}><b>{x.type}</b><small>{x.title || x.taskId} · {new Date(x.createdAt).toLocaleTimeString('id-ID')}</small></div>)}</div>
     </>}
   </section>;
