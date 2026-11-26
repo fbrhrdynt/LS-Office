@@ -1,0 +1,20 @@
+PAKET 3 AGENT GRATIS untuk Kantor AI (Antigravity CLI)
+dari @malikisaputra
+
+1. Unduh template Kantor AI: https://github.com/malikisaputra-source/kantor-ai-template
+2. Salin AGENTS.md dan folder .agents ke dalam folder template itu.
+   (Folder .agents tersembunyi di Mac: tekan Cmd + Shift + titik di Finder supaya terlihat.)
+3. Pasang Antigravity CLI (gratis, login Gmail, umur 18+):
+   Mac:     curl -fsSL https://antigravity.google/cli/install.sh | bash
+   Windows: irm https://antigravity.google/cli/install.ps1 | iex
+4. Buka Terminal di folder template, ketik: agy
+   Lalu tulis: minta agent riset, penulis, dan admin mengerjakan tugasnya, lalu tulis laporannya ke laporan.json
+5. Setujui izin setelah dibaca. Izin dari agent anggota tim muncul di kotak kuning: tekan ctrl+k.
+6. Buka kantornya (butuh Node.js): npm install, lalu npm run dev.
+   Raka, Sekar, dan Lita tampil dengan laporan barunya.
+
+---
+Template oleh Maliki Saputra (@malikisaputra) — https://malikisaputra.biz.id
+Gratis, Lisensi Nonkomersial Maliki Studio 1.0: boleh dipakai untuk belajar, pribadi,
+atau usaha/organisasimu sendiri; wajib cantumkan kredit; DILARANG dijual, dijual ulang,
+atau dipakai untuk jasa berbayar ke pihak lain. Lihat file LICENSE.
