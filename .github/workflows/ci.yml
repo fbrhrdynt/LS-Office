@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, feat/director-session-video-pipeline, feat/approval-gated-production]
   push:
-    branches: [main, feat/director-session-video-pipeline, feat/approval-gated-production]
+    branches: [main, feat/director-session-video-pipeline, feat/approval-gated-production, feat/social-account-foundation]
 
 permissions:
   contents: read
@@ -29,8 +29,11 @@ jobs:
           node --check server/worker.mjs
           node --check server/video.mjs
           node --check server/workflows.mjs
+          node --check server/social-oauth.mjs
       - name: Workflow routing tests
         run: npm run test:workflow
+      - name: Social OAuth security tests
+        run: npm run test:social-oauth
       - name: Existing application tests
         run: npm test
       - name: Production build
