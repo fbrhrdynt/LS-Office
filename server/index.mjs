@@ -6,6 +6,7 @@ import path from 'node:path';
 import pg from 'pg';
 import { EMPLOYEES } from './employees.mjs';
 import { VIDEO_WORKFLOW } from './workflows.mjs';
+import { buildAuthorizationUrl, completeOAuth, oauthConfiguration } from './social-oauth.mjs';
 
 const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: Number(process.env.DB_POOL_MAX || 5), connectionTimeoutMillis: 5000 });
@@ -19,12 +20,15 @@ const equal = (a, b) => { const x = Buffer.from(String(a)); const y = Buffer.fro
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin' }); res.end(JSON.stringify(data)); };
 async function body(req) { let raw = ''; for await (const c of req) { raw += c; if (Buffer.byteLength(raw) > MAX_BODY) throw Object.assign(new Error('Body too large'), { status: 413 }); } try { return raw ? JSON.parse(raw) : {}; } catch { throw Object.assign(new Error('Invalid JSON'), { status: 400 }); } }
 function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').map(v => v.trim()).filter(Boolean).map(v => { const i = v.indexOf('='); return [v.slice(0, i), decodeURIComponent(v.slice(i + 1))]; })); }
-function setSessionCookie(res, value, maxAge) { res.setHeader('Set-Cookie', value ? `${COOKIE}=${encodeURIComponent(value)}; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}` : `${COOKIE}=; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=0`); }
+function setSessionCookie(res, value, maxAge) { res.setHeader('Set-Cookie', value ? `${COOKIE}=${encodeURIComponent(value)}; Path=/api; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}` : `${COOKIE}=; Path=/api; HttpOnly; Secure; SameSite=Lax; Max-Age=0`); }
 function checkOrigin(req) { const origin = req.headers.origin; if (!origin) return true; try { return new URL(origin).host === (req.headers.host || '').split(':')[0] || new URL(origin).host === req.headers.host; } catch { return false; } }
 async function migrate() {
   await pool.query(await (await import('node:fs/promises')).readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
   for (const e of EMPLOYEES) await pool.query('INSERT INTO employees(id,key,name,role,department,manager_key,system_prompt) VALUES($1,$1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,role=EXCLUDED.role,department=EXCLUDED.department,manager_key=EXCLUDED.manager_key,system_prompt=EXCLUDED.system_prompt,updated_at=now()', [e.key, e.name, e.role, e.department, e.managerKey, e.prompt]);
   await pool.query('DELETE FROM director_sessions WHERE expires_at < now()');
+  await pool.query(`CREATE TABLE IF NOT EXISTS social_oauth_states (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), state_hash text UNIQUE NOT NULL, platform text NOT NULL CHECK(platform IN ('instagram','facebook','tiktok','youtube')), session_hash text NOT NULL REFERENCES director_sessions(token_hash) ON DELETE CASCADE, expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_social_oauth_states_expiry ON social_oauth_states(expires_at)');
+  await pool.query('DELETE FROM social_oauth_states WHERE expires_at < now()');
 }
 async function authenticate(req) {
   const bearer = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
@@ -53,6 +57,21 @@ const server = http.createServer(async (req, res) => {
       const session = await authenticate(req);
       return json(res, session ? 200 : 401, session ? { authenticated: true } : { authenticated: false });
     }
+    const socialCallback = route.match(/^\/api\/social\/(instagram|facebook|tiktok|youtube)\/callback$/);
+    if (socialCallback && req.method === 'GET') {
+      const platform = socialCallback[1];
+      const sessionToken = cookies(req)[COOKIE];
+      const session = await authenticate(req);
+      if (!session || !sessionToken) return json(res, 401, { error: 'Director session required to complete OAuth' });
+      const providerError = url.searchParams.get('error');
+      if (providerError) return json(res, 400, { error: 'Provider authorization failed: ' + providerError.slice(0, 100) });
+      const code = url.searchParams.get('code');
+      const state = url.searchParams.get('state');
+      if (!code || !state || code.length > 4096 || state.length > 256) return json(res, 400, { error: 'Invalid OAuth callback parameters' });
+      await completeOAuth(pool, platform, code, state, hash(sessionToken));
+      res.writeHead(303, { location: '/?social=connected', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+      return res.end();
+    }
     if (route === '/api/auth/logout' && req.method === 'POST') {
       if (!checkOrigin(req)) return json(res, 403, { error: 'Origin not allowed' });
       const token = cookies(req)[COOKIE];
@@ -63,9 +82,38 @@ const server = http.createServer(async (req, res) => {
     const session = await authenticate(req);
     if (!session) return json(res, 401, { error: 'Unauthorized' });
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !checkOrigin(req)) return json(res, 403, { error: 'Origin not allowed' });
+    const socialConnect = route.match(/^\/api\/social\/(instagram|facebook|tiktok|youtube)\/connect$/);
+    if (socialConnect && req.method === 'GET') {
+      const requestedPlatform = socialConnect[1];
+      const platform = ['instagram', 'facebook'].includes(requestedPlatform) ? 'facebook' : requestedPlatform;
+      if (!oauthConfiguration(platform) || !process.env.SOCIAL_TOKEN_ENCRYPTION_KEY) return json(res, 503, { error: 'OAuth provider and token-encryption configuration are required' });
+      const sessionToken = cookies(req)[COOKIE];
+      if (!sessionToken) return json(res, 401, { error: 'Director session required' });
+      const state = randomBytes(32).toString('base64url');
+      await pool.query('INSERT INTO social_oauth_states(state_hash,platform,session_hash,expires_at) VALUES($1,$2,$3,now()+interval \'10 minutes\')', [hash(state), platform, hash(sessionToken)]);
+      const target = await buildAuthorizationUrl(platform, state);
+      res.writeHead(302, { location: target, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+      return res.end();
+    }
     if (route === '/api/employees' && req.method === 'GET') {
       const q = await pool.query("SELECT id,name,role,department,manager_key AS \"managerKey\" FROM employees WHERE active AND id <> 'alex' ORDER BY department,name");
       return json(res, 200, { employees: q.rows });
+    }
+    if (route === '/api/social/accounts' && req.method === 'GET') {
+      const connected = await pool.query("SELECT platform,external_account_id AS \"accountId\",account_name AS \"accountName\",status,scopes,token_expires_at AS \"tokenExpiresAt\",connected_at AS \"connectedAt\" FROM social_accounts ORDER BY platform,account_name");
+      const configured = {
+        instagram: Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET && process.env.META_REDIRECT_URI),
+        facebook: Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET && process.env.META_REDIRECT_URI),
+        tiktok: Boolean(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET && process.env.TIKTOK_REDIRECT_URI),
+        youtube: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI)
+      };
+      const requirements = {
+        instagram: ['Meta Developer App', 'Instagram Professional account', 'Facebook Page linked to Instagram'],
+        facebook: ['Meta Developer App', 'Facebook Page', 'Page publishing permissions'],
+        tiktok: ['TikTok for Developers app', 'Content Posting API product', 'video.publish approval and app audit for public posts'],
+        youtube: ['Google Cloud project', 'YouTube Data API v3 enabled', 'OAuth consent configuration']
+      };
+      return json(res, 200, { platforms: Object.keys(configured).map(platform => ({ platform, configured: configured[platform] && Boolean(process.env.SOCIAL_TOKEN_ENCRYPTION_KEY), accounts: connected.rows.filter(account => account.platform === platform), requirements: requirements[platform] })) });
     }
     if (route === '/api/overview' && req.method === 'GET') {
       const c = await pool.query('SELECT status,count(*)::int AS count FROM tasks GROUP BY status');
