@@ -70,20 +70,19 @@ export async function renderAnimatedDrama(task) {
       await writeFile(imagePath, Buffer.from(encoded, 'base64'));
       images.push(imagePath);
     }
-    const speech = await openai('/audio/speech', { model: speechModel, voice: 'alloy', input: story.narration.slice(0, 4000), response_format: 'mp3' }, 180000);
+    const audioController = new AbortController();
+    const audioTimer = setTimeout(() => audioController.abort(), 180000);
+    let audioResponse;
+    try {
+      audioResponse = await fetch(API + '/audio/speech', { method: 'POST', signal: audioController.signal, headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json' }, body: JSON.stringify({ model: speechModel, voice: 'alloy', input: story.narration.slice(0, 4000), response_format: 'mp3' }) });
+      if (!audioResponse.ok) throw new Error('Speech generation failed: ' + (await audioResponse.text()).slice(0, 1000));
+      await writeFile(path.join(work, 'voice.mp3'), Buffer.from(await audioResponse.arrayBuffer()));
+    } finally { clearTimeout(audioTimer); }
     const audioPath = path.join(work, 'voice.mp3');
-    // Speech endpoint returns binary audio; use a raw request rather than JSON helper.
-    await writeFile(audioPath, Buffer.from(speech.audio || '', 'base64'));
-    if ((await readFile(audioPath)).length < 1000) {
-      const controller = new AbortController();
-      const response = await fetch(API + '/audio/speech', { method: 'POST', signal: controller.signal, headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json' }, body: JSON.stringify({ model: speechModel, voice: 'alloy', input: story.narration.slice(0, 4000), response_format: 'mp3' }) });
-      if (!response.ok) throw new Error('Speech generation failed: ' + (await response.text()).slice(0, 1000));
-      await writeFile(audioPath, Buffer.from(await response.arrayBuffer()));
-    }
     const ffmpegArgs = ['-y'];
     for (let i = 0; i < images.length; i++) ffmpegArgs.push('-loop', '1', '-t', String(story.scenes[i].duration_seconds || 8), '-i', images[i]);
     ffmpegArgs.push('-i', audioPath);
-    const filters = images.map((_, i) => '[' + i + ':v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,zoompan=z='min(zoom+0.0009,1.12)':d=1:s=720x1280:fps=24,setsar=1,format=yuv420p[v' + i + ']').join(';');
+    const filters = images.map((_, i) => '[' + i + ':v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,zoompan=z="min(zoom+0.0009,1.12)":d=1:s=720x1280:fps=24,setsar=1,format=yuv420p[v' + i + ']').join(';');
     const concat = images.map((_, i) => '[v' + i + ']').join('') + 'concat=n=' + images.length + ':v=1:a=0[outv]';
     ffmpegArgs.push('-filter_complex', filters + ';' + concat, '-map', '[outv]', '-map', String(images.length) + ':a:0', '-shortest', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', output);
     await run(process.env.FFMPEG_PATH || 'ffmpeg', ffmpegArgs, 600000);
