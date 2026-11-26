@@ -1,0 +1,26 @@
+[Unit]
+Description=LogiSource AI Office API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=ls-office
+Group=ls-office
+WorkingDirectory=/opt/ls-office
+EnvironmentFile=/etc/ls-office/api.env
+ExecStart=/usr/bin/node /opt/ls-office/server/index.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ls-office
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=350M
+CPUQuota=60%
+
+[Install]
+WantedBy=multi-user.target
