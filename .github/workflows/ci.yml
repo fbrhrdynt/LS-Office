@@ -2,9 +2,9 @@ name: LS Office CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/director-session-video-pipeline, feat/approval-gated-production]
   push:
-    branches: [main, feat/director-session-video-pipeline]
+    branches: [main, feat/director-session-video-pipeline, feat/approval-gated-production]
 
 permissions:
   contents: read
