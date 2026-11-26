@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS tasks (
  status text NOT NULL DEFAULT 'queued' CHECK(status IN ('draft','queued','assigned','in_progress','review','approved','completed','blocked','changes_requested','rejected','cancelled','failed')),
  created_by text NOT NULL DEFAULT 'director', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_type text NOT NULL DEFAULT 'text';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS artifact_path text;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS artifact_mime text;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS artifact_name text;
 CREATE TABLE IF NOT EXISTS task_runs (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), task_id uuid NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
  attempt integer NOT NULL, status text NOT NULL CHECK(status IN ('running','succeeded','failed')),
@@ -21,6 +25,13 @@ CREATE TABLE IF NOT EXISTS task_events (
  id bigserial PRIMARY KEY, task_id uuid REFERENCES tasks(id) ON DELETE CASCADE,
  event_type text NOT NULL, payload jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS director_sessions (
+ token_hash text PRIMARY KEY,
+ expires_at timestamptz NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ last_seen_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id,status);
 CREATE INDEX IF NOT EXISTS idx_events_created ON task_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_director_sessions_expiry ON director_sessions(expires_at);
