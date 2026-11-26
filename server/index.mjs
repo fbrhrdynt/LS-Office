@@ -5,6 +5,7 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import pg from 'pg';
 import { EMPLOYEES } from './employees.mjs';
+import { VIDEO_WORKFLOW } from './workflows.mjs';
 
 const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: Number(process.env.DB_POOL_MAX || 5), connectionTimeoutMillis: 5000 });
@@ -79,10 +80,18 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req);
       if (typeof b.instruction !== 'string' || !b.instruction.trim() || b.instruction.length > 12000 || typeof b.title !== 'string' || !b.title.trim() || b.title.length > 160) return json(res, 400, { error: 'Title/instruction invalid' });
       if (!['text', 'animated_video'].includes(b.taskType || 'text')) return json(res, 400, { error: 'Invalid task type' });
-      const a = await pool.query('SELECT id FROM employees WHERE id=$1 AND active AND id<>$2', [b.assigneeId, 'alex']);
+      const taskType = b.taskType || 'text';
+      const assigneeId = taskType === 'animated_video' ? 'ethan' : b.assigneeId;
+      const a = await pool.query('SELECT id FROM employees WHERE id=$1 AND active AND id<>$2', [assigneeId, 'alex']);
       if (!a.rowCount) return json(res, 400, { error: 'Invalid assignee' });
-      const v = await pool.query("INSERT INTO tasks(title,instruction,acceptance_criteria,assignee_id,reviewer_id,priority,status,task_type) VALUES($1,$2,$3,$4,$5,$6,'queued',$7) RETURNING *", [b.title.trim(), b.instruction.trim(), String(b.acceptanceCriteria || '').slice(0, 5000), b.assigneeId, b.reviewerId || null, ['low', 'normal', 'high', 'urgent'].includes(b.priority) ? b.priority : 'normal', b.taskType || 'text']);
-      await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'task_created',$2)", [v.rows[0].id, JSON.stringify({ assigneeId: b.assigneeId, taskType: b.taskType || 'text' })]);
+      const v = await pool.query("INSERT INTO tasks(title,instruction,acceptance_criteria,assignee_id,reviewer_id,priority,status,task_type) VALUES($1,$2,$3,$4,$5,$6,'queued',$7) RETURNING *", [b.title.trim(), b.instruction.trim(), String(b.acceptanceCriteria || '').slice(0, 5000), assigneeId, b.reviewerId || 'alex', ['low', 'normal', 'high', 'urgent'].includes(b.priority) ? b.priority : 'normal', taskType]);
+      if (taskType === 'animated_video') {
+        for (let i = 0; i < VIDEO_WORKFLOW.length; i++) {
+          const step = VIDEO_WORKFLOW[i];
+          await pool.query('INSERT INTO workflow_steps(task_id,step_order,step_key,assignee_id,title,instruction) VALUES($1,$2,$3,$4,$5,$6)', [v.rows[0].id, i + 1, step.key, step.employeeId, step.title, step.instruction]);
+        }
+      }
+      await pool.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'task_created',$2)", [v.rows[0].id, JSON.stringify({ assigneeId, taskType, workflow: taskType === 'animated_video' })]);
       return json(res, 201, { task: v.rows[0] });
     }
     const m = route.match(/^\/api\/tasks\/([0-9a-f-]+)(?:\/(approval|video))?$/i);
@@ -90,7 +99,8 @@ const server = http.createServer(async (req, res) => {
       const t = await pool.query('SELECT t.*,e.name AS assignee_name FROM tasks t JOIN employees e ON e.id=t.assignee_id WHERE t.id=$1', [m[1]]);
       if (!t.rowCount) return json(res, 404, { error: 'Task not found' });
       const runs = await pool.query('SELECT id,status,output_text,error_message,started_at,finished_at FROM task_runs WHERE task_id=$1 ORDER BY attempt DESC', [m[1]]);
-      return json(res, 200, { task: t.rows[0], runs: runs.rows });
+      const steps = await pool.query('SELECT s.id,s.step_order,s.step_key,s.title,s.status,s.output_text,s.started_at,s.finished_at,e.name AS assignee_name FROM workflow_steps s LEFT JOIN employees e ON e.id=s.assignee_id WHERE s.task_id=$1 ORDER BY s.step_order', [m[1]]);
+      return json(res, 200, { task: t.rows[0], runs: runs.rows, workflowSteps: steps.rows });
     }
     if (m && m[2] === 'video' && req.method === 'GET') {
       const q = await pool.query("SELECT artifact_path,artifact_mime,artifact_name FROM tasks WHERE id=$1 AND task_type='animated_video' AND artifact_path IS NOT NULL", [m[1]]);
