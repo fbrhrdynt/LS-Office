@@ -91,7 +91,7 @@ const server = http.createServer(async (req, res) => {
         if (taskType === 'animated_video') {
           for (let i = 0; i < VIDEO_WORKFLOW.length; i++) {
             const step = VIDEO_WORKFLOW[i];
-            await client.query('INSERT INTO workflow_steps(task_id,step_order,step_key,assignee_id,title,instruction) VALUES($1,$2,$3,$4,$5,$6)', [v.rows[0].id, i + 1, step.key, step.employeeId, step.title, step.instruction]);
+            await client.query('INSERT INTO workflow_steps(task_id,step_order,step_key,assignee_id,title,instruction,requires_approval) VALUES($1,$2,$3,$4,$5,$6,$7)', [v.rows[0].id, i + 1, step.key, step.employeeId, step.title, step.instruction, Boolean(step.requiresApproval)]);
           }
         }
         await client.query("INSERT INTO task_events(task_id,event_type,payload) VALUES($1,'task_created',$2)", [v.rows[0].id, JSON.stringify({ assigneeId, taskType, workflow: taskType === 'animated_video' })]);
@@ -107,8 +107,9 @@ const server = http.createServer(async (req, res) => {
       const t = await pool.query('SELECT t.*,e.name AS assignee_name FROM tasks t JOIN employees e ON e.id=t.assignee_id WHERE t.id=$1', [m[1]]);
       if (!t.rowCount) return json(res, 404, { error: 'Task not found' });
       const runs = await pool.query('SELECT id,status,output_text,error_message,started_at,finished_at FROM task_runs WHERE task_id=$1 ORDER BY attempt DESC', [m[1]]);
-      const steps = await pool.query('SELECT s.id,s.step_order,s.step_key,s.title,s.status,s.output_text,s.started_at,s.finished_at,e.name AS assignee_name FROM workflow_steps s LEFT JOIN employees e ON e.id=s.assignee_id WHERE s.task_id=$1 ORDER BY s.step_order', [m[1]]);
-      return json(res, 200, { task: t.rows[0], runs: runs.rows, workflowSteps: steps.rows });
+      const steps = await pool.query('SELECT s.id,s.step_order,s.step_key,s.title,s.status,s.requires_approval,s.output_text,s.started_at,s.finished_at,e.name AS assignee_name FROM workflow_steps s LEFT JOIN employees e ON e.id=s.assignee_id WHERE s.task_id=$1 ORDER BY s.step_order', [m[1]]);
+      const publicationJobs = await pool.query('SELECT platform,status,post_url,error_message,created_at,published_at FROM publication_jobs WHERE task_id=$1 ORDER BY platform', [m[1]]);
+      return json(res, 200, { task: t.rows[0], runs: runs.rows, workflowSteps: steps.rows, publicationJobs: publicationJobs.rows });
     }
     if (m && m[2] === 'video' && req.method === 'GET') {
       const q = await pool.query("SELECT artifact_path,artifact_mime,artifact_name FROM tasks WHERE id=$1 AND task_type='animated_video' AND artifact_path IS NOT NULL", [m[1]]);
@@ -131,20 +132,38 @@ const server = http.createServer(async (req, res) => {
           await client.query('ROLLBACK');
           return json(res, 409, { error: 'Task not in Director review or reviewer mismatch' });
         }
-        if (b.decision === 'approved' && task.rows[0].task_type === 'animated_video' && !task.rows[0].artifact_path) {
+        const gate = await client.query("SELECT id,step_key FROM workflow_steps WHERE task_id=$1 AND status='awaiting_approval' ORDER BY step_order LIMIT 1 FOR UPDATE", [m[1]]);
+        if (!gate.rowCount) {
           await client.query('ROLLBACK');
-          return json(res, 409, { error: 'Cannot complete video task: rendered MP4 is missing' });
+          return json(res, 409, { error: 'No workflow checkpoint is waiting for Director approval' });
         }
+        const currentGate = gate.rows[0];
         let status;
-        if (b.decision === 'approved') status = 'completed';
-        else if (b.decision === 'rejected') status = 'rejected';
-        else status = task.rows[0].task_type === 'animated_video' ? 'queued' : 'changes_requested';
-        const restartWorkflow = b.decision === 'changes_requested' && task.rows[0].task_type === 'animated_video';
-        await client.query('UPDATE tasks SET status=$2,artifact_path=CASE WHEN $3 THEN NULL ELSE artifact_path END,artifact_mime=CASE WHEN $3 THEN NULL ELSE artifact_mime END,artifact_name=CASE WHEN $3 THEN NULL ELSE artifact_name END,updated_at=now() WHERE id=$1', [m[1], status, restartWorkflow]);
-        if (restartWorkflow) await client.query("UPDATE workflow_steps SET status='pending',output_text=NULL,started_at=NULL,finished_at=NULL WHERE task_id=$1", [m[1]]);
-        await client.query('INSERT INTO task_events(task_id,event_type,payload) VALUES($1,$2,$3)', [m[1], 'review_' + b.decision, JSON.stringify({ notes: String(b.notes || '').slice(0, 2000), workflowRestarted: restartWorkflow })]);
+        let publicationJobsCreated = false;
+        if (b.decision === 'approved') {
+          if (currentGate.step_key === 'distribution' && !task.rows[0].artifact_path) {
+            await client.query('ROLLBACK');
+            return json(res, 409, { error: 'Final approval blocked: video artifact is missing' });
+          }
+          await client.query("UPDATE workflow_steps SET status='completed',finished_at=now() WHERE id=$1", [currentGate.id]);
+          if (currentGate.step_key === 'distribution') {
+            await client.query("INSERT INTO publication_jobs(task_id,platform,status) VALUES($1,'instagram','awaiting_connection'),($1,'tiktok','awaiting_connection'),($1,'youtube','awaiting_connection'),($1,'facebook','awaiting_connection') ON CONFLICT(task_id,platform) DO NOTHING", [m[1]]);
+            status = 'completed';
+            publicationJobsCreated = true;
+          } else {
+            status = 'queued';
+          }
+        } else if (b.decision === 'changes_requested') {
+          await client.query("UPDATE workflow_steps SET status='pending',output_text=NULL,started_at=NULL,finished_at=NULL WHERE id=$1", [currentGate.id]);
+          status = 'queued';
+        } else {
+          await client.query("UPDATE workflow_steps SET status='skipped' WHERE task_id=$1 AND status IN ('pending','awaiting_approval')", [m[1]]);
+          status = 'rejected';
+        }
+        await client.query('UPDATE tasks SET status=$2,updated_at=now() WHERE id=$1', [m[1], status]);
+        await client.query('INSERT INTO task_events(task_id,event_type,payload) VALUES($1,$2,$3)', [m[1], 'review_' + b.decision, JSON.stringify({ notes: String(b.notes || '').slice(0, 2000), checkpoint: currentGate.step_key, publicationJobsCreated })]);
         await client.query('COMMIT');
-        return json(res, 200, { ok: true, status, workflowRestarted: restartWorkflow });
+        return json(res, 200, { ok: true, status, checkpoint: currentGate.step_key, publicationJobsCreated });
       } catch (error) {
         await client.query('ROLLBACK').catch(() => {});
         throw error;
