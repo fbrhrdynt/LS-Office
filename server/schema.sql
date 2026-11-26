@@ -53,3 +53,27 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
  UNIQUE(task_id,step_key)
 );
 CREATE INDEX IF NOT EXISTS idx_workflow_steps_ready ON workflow_steps(status,task_id,step_order);
+
+
+-- Director approval gates and per-platform publication queue.
+ALTER TABLE workflow_steps ADD COLUMN IF NOT EXISTS requires_approval boolean NOT NULL DEFAULT false;
+ALTER TABLE workflow_steps DROP CONSTRAINT IF EXISTS workflow_steps_status_check;
+ALTER TABLE workflow_steps ADD CONSTRAINT workflow_steps_status_check
+ CHECK(status IN ('pending','running','awaiting_approval','completed','failed','skipped'));
+
+CREATE TABLE IF NOT EXISTS publication_jobs (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ task_id uuid NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+ platform text NOT NULL CHECK(platform IN ('instagram','tiktok','youtube','facebook')),
+ status text NOT NULL DEFAULT 'awaiting_connection'
+   CHECK(status IN ('awaiting_connection','queued','publishing','published','failed')),
+ caption text,
+ external_post_id text,
+ post_url text,
+ error_message text,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ published_at timestamptz,
+ UNIQUE(task_id,platform)
+);
+CREATE INDEX IF NOT EXISTS idx_publication_jobs_status ON publication_jobs(status,created_at);
