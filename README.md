@@ -32,8 +32,8 @@ Kantor 3D menampilkan status asli: ⌨️ mengetik = sedang mengerjakan tahapnya
 ```
 Nadia riset + 3-5 ide ──▶ [KAMU pilih ide]
   ▶ Felix naskah (hanya kalimat yang diucapkan) ▶ Ethan storyboard & visual ▶ Maya arahan suara
-  ▶ Production engine: gambar adegan (gpt-image-2) + suara per adegan (gpt-4o-mini-tts)
-                       + timing per kata (Whisper) + render Remotion (caption kinetik, label, hook)
+  ▶ Production engine: gambar adegan (gpt-image-2) + suara per adegan (ElevenLabs, timing per kata ikut;
+                       tanpa key ElevenLabs: OpenAI TTS + Whisper) + render Remotion (caption kinetik, label, hook)
   ▶ Daren QA (codec, resolusi, durasi) ──▶ [KAMU review video]
         ├─ approve
         └─ tulis revisi → Alex memilih tahap yang diulang (atau kamu pilih) → tim mengulang dari situ
@@ -49,7 +49,8 @@ Nadia riset tema + 3-5 ide seri (arc per part) ──▶ [KAMU pilih]
   ▶ Felix rancangan seri: tokoh + daftar part + cliffhanger tiap part ──▶ [KAMU setujui]
   ▶ Ethan desain tokoh & lokasi ─▶ seri tercipta, Part 1 otomatis masuk produksi
 Setiap part:
-  Felix naskah (ingat part sebelumnya, ditutup cliffhanger) ▶ Ethan storyboard ▶ Maya suara (sama tiap part)
+  Felix naskah (ingat part sebelumnya, ditutup cliffhanger) ▶ Ethan storyboard
+  ▶ Maya memilih suara dari akun ElevenLabs → suara itu DIKUNCI untuk semua part seri
   ▶ engine: character sheet seri (dibuat sekali) dipakai sebagai referensi SETIAP gambar → tokoh konsisten
   ▶ Daren QA ──▶ [KAMU review video / revisi] ▶ Olivier caption "Part N" + jadwal ──▶ [KAMU setujui posting]
   ▶ saat kamu setujui posting Part N, Part N+1 otomatis mulai diproduksi (bisa dijeda di Studio → Seri cerita)
@@ -80,6 +81,7 @@ Arvin rencana teknis ──▶ [KAMU setujui]
 | Chat web dengan Alex & personnel | ✅ berjalan |
 | Kantor 3D berbasis status nyata | ✅ berjalan |
 | Tim Web Dev (Claude Code) | ✅ diuji di dev; production perlu token Claude di `/etc/ls-office/devagent.env` |
+| Suara narator ElevenLabs | ✅ siap, aktif setelah `ELEVENLABS_API_KEY` diisi |
 | Bot Telegram | ⏳ siap, perlu `TELEGRAM_BOT_TOKEN` |
 | Posting TikTok / IG / FB / YouTube | ⏳ siap, perlu developer app + akun terhubung; belum diuji dengan akun asli |
 | Video cerita bersambung (Part 1, 2, 3…) dengan tokoh konsisten | ✅ berjalan (±$1–1.5 per part, render ±5–8 menit) |
@@ -112,6 +114,7 @@ Aturan kerja: kembangkan di branch/worktree terpisah dan database dev (salinan d
 
 | Tanggal | Perubahan |
 |---|---|
+| 2026-11-27 | Suara pakai ElevenLabs (`eleven_multilingual_v2`): Maya memilih dari suara yang ada di akun, satu suara dikunci per seri, timing caption langsung dari ElevenLabs (tanpa Whisper). Tanpa `ELEVENLABS_API_KEY` otomatis kembali ke OpenAI TTS. |
 | 2026-11-27 | Cerita bersambung: alur seri (ide Nadia → rancangan Felix → desain tokoh Ethan), episode otomatis per part, character sheet sebagai referensi gambar (tokoh konsisten), template Remotion "story" (badge PART, layar chat/saldo, caption bawah, "Bersambung"), tab Studio → Seri cerita, Telegram `/cerita`. |
 | 2026-11-27 | Operations v2 di production: workflow video baru (pilih ide → review video → revisi bertarget → caption & jadwal), Remotion + FFmpeg, publisher terjadwal, bot Telegram, chat, tim Web Dev (Claude Code), kantor 3D berbasis status nyata, Command Center baru, migrasi bernomor, service render terpisah, backup harian, swap 2 GB, rate limit login. |
 | 2026-11-26 | Fondasi OAuth sosial, perbaikan approval Command Center, audit teknis menyeluruh. |

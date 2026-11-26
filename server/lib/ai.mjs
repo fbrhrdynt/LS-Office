@@ -104,6 +104,69 @@ export async function recordSpeech(ctx, seconds) {
   await record(ctx, 'tts', config.ttsModel, { seconds }, (seconds / 60) * (PRICES.ttsPerMinute[config.ttsModel] ?? 0.015));
 }
 
+/* ------------------------------------------------------------------ ElevenLabs */
+
+const ELEVEN = 'https://api.elevenlabs.io';
+let voiceCache = { at: 0, voices: [] };
+
+/** Voices available on the ElevenLabs account: [{ id, name, labels, description, category }] (cached 1 hour). */
+export async function listElevenVoices() {
+  if (Date.now() - voiceCache.at < 3600000 && voiceCache.voices.length) return voiceCache.voices;
+  const voices = [];
+  let token = '';
+  for (let page = 0; page < 5; page++) {
+    const url = ELEVEN + '/v2/voices?page_size=100' + (token ? '&next_page_token=' + encodeURIComponent(token) : '');
+    const r = await fetch(url, { headers: { 'xi-api-key': config.elevenKey }, signal: AbortSignal.timeout(30000) });
+    const d = await r.json().catch(() => null);
+    if (!r.ok || !d) throw new Error('ElevenLabs voices: ' + (d?.detail?.message || d?.detail?.[0]?.msg || 'HTTP ' + r.status));
+    for (const v of d.voices || []) voices.push({ id: v.voice_id, name: v.name || v.voice_id, labels: v.labels || {}, description: v.description || '', category: v.category || '' });
+    if (!d.has_more || !d.next_page_token) break;
+    token = d.next_page_token;
+  }
+  voiceCache = { at: Date.now(), voices };
+  return voices;
+}
+
+/** Character-level alignment -> words with start/end seconds. */
+export function alignmentToWords(alignment) {
+  const chars = alignment?.characters || [];
+  const starts = alignment?.character_start_times_seconds || [];
+  const ends = alignment?.character_end_times_seconds || [];
+  const words = [];
+  let cur = null;
+  chars.forEach((ch, i) => {
+    if (/\s/.test(ch)) { if (cur) { words.push(cur); cur = null; } return; }
+    if (!cur) cur = { word: '', start: Number(starts[i] ?? 0), end: Number(ends[i] ?? 0) };
+    cur.word += ch;
+    cur.end = Number(ends[i] ?? cur.end);
+  });
+  if (cur) words.push(cur);
+  return words.filter((w) => /[\p{L}\p{N}]/u.test(w.word));
+}
+
+/** ElevenLabs speech with timing. Returns { bytes (mp3), words }. */
+export async function speakEleven({ text, voiceId, previousText = '', nextText = '', ctx = null }) {
+  if (!config.elevenKey) throw new Error('ELEVENLABS_API_KEY belum diisi');
+  const body = {
+    text: text.slice(0, 5000),
+    model_id: config.elevenModel,
+    voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.3, use_speaker_boost: true, speed: config.elevenSpeed },
+    apply_text_normalization: 'auto',
+  };
+  if (previousText) body.previous_text = previousText.slice(-1000);
+  if (nextText) body.next_text = nextText.slice(0, 1000);
+  const r = await fetch(ELEVEN + '/v1/text-to-speech/' + encodeURIComponent(voiceId) + '/with-timestamps?output_format=mp3_44100_128', {
+    method: 'POST', signal: AbortSignal.timeout(180000), headers: { 'xi-api-key': config.elevenKey, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d?.audio_base64) {
+    const detail = d?.detail;
+    throw new Error('ElevenLabs: ' + (typeof detail === 'string' ? detail : detail?.message || detail?.[0]?.msg || 'HTTP ' + r.status));
+  }
+  await record(ctx, 'tts', 'elevenlabs:' + config.elevenModel, { chars: body.text.length, voiceId }, (body.text.length / 1000) * config.elevenUsdPer1kChars);
+  return { bytes: Buffer.from(d.audio_base64, 'base64'), words: alignmentToWords(d.alignment || d.normalized_alignment) };
+}
+
 /** Word-level timestamps for an audio file: [{ word, start, end }] in seconds. */
 export async function transcribeWords({ file, language = 'id', ctx = null }) {
   const form = new FormData();

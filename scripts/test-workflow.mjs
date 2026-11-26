@@ -8,6 +8,7 @@ import { VIDEO_WORKFLOW, WEB_BUILD_WORKFLOW, WEB_UPDATE_WORKFLOW, STORY_SERIES_W
 import { buildPublishPlan, parseLocal } from '../server/lib/engine.mjs';
 import { cleanNarration, alignWords, spokenText, evenWords } from '../server/video/produce.mjs';
 import { formatOutput } from '../server/lib/format.mjs';
+import { alignmentToWords } from '../server/lib/ai.mjs';
 
 let n = 0;
 const t = (name, fn) => { fn(); n++; };
@@ -66,6 +67,13 @@ t('publish plan: Director overrides, future time, affiliate CTA once', () => {
   const edited = buildPublishPlan(pkg, { posts: [{ platform: 'instagram', caption: 'Caption baru' }] });
   assert.equal(edited.posts.find((p) => p.platform === 'instagram').caption, 'Caption baru');
   assert.equal(parseLocal('2026-12-01 19:30').toISOString(), '2026-12-01T12:30:00.000Z');
+});
+t('ElevenLabs character timing becomes word timing', () => {
+  const text = 'Gaji Dina habis, cuma lima puluh ribu.';
+  const c = [...text];
+  const words = alignmentToWords({ characters: c, character_start_times_seconds: c.map((_, i) => i * 0.05), character_end_times_seconds: c.map((_, i) => i * 0.05 + 0.05) });
+  assert.deepEqual(words.map((w) => w.word), ['Gaji', 'Dina', 'habis,', 'cuma', 'lima', 'puluh', 'ribu.']);
+  assert.ok(words.every((w, i) => w.end > w.start && (i === 0 || w.start >= words[i - 1].end)));
 });
 t('outputs are readable for the Director', () => {
   const text = formatOutput('ideas', { ideas: [{ title: 'A', hook: 'H', angle: 'X', format: 'cards', why_it_works: 'W', key_facts: ['f'], sources: [{ title: 's', url: 'https://x' }], affiliate_fit: '-' }], recommendation: 'A' });

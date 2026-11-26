@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { stat } from 'node:fs/promises';
 import { startWorker } from './lib/runner.mjs';
-import { respond } from './lib/ai.mjs';
+import { respond, listElevenVoices } from './lib/ai.mjs';
 import { workContext } from './lib/engine.mjs';
 import { answerNextMessage } from './lib/chat.mjs';
 import { config } from './lib/config.mjs';
@@ -26,12 +26,24 @@ async function agentStep(job, { pool }) {
   }
   const def = stepDef(job.task_type, job.step_key);
   if (!job.system_prompt) throw new Error('Employee prompt not found for step ' + job.step_key);
-  const schema = def?.schema ? SCHEMAS[def.schema] : null;
+  let schema = def?.schema ? SCHEMAS[def.schema] : null;
+  let voiceNote = '';
+  if (job.step_key === 'audio_direction' && config.ttsProvider === 'elevenlabs') {
+    // Maya chooses from the voices that really exist on the ElevenLabs account; a series keeps its first voice.
+    const fixed = job.series_id ? (await pool.query('SELECT voice_name FROM series WHERE id=$1', [job.series_id])).rows[0]?.voice_name : null;
+    const voices = (await listElevenVoices()).slice(0, 80);
+    if (!voices.length) throw new Error('Akun ElevenLabs belum punya suara');
+    const names = fixed ? [fixed] : [...new Set(voices.map((v) => v.name))];
+    schema = { ...schema, properties: { ...schema.properties, voice: { type: 'string', enum: names, description: 'ElevenLabs voice name' } } };
+    voiceNote = fixed
+      ? '\n\n### SUARA SERI SUDAH DIKUNCI: ' + fixed + ' (pakai suara ini; tulis arahanmu untuk catatan saja).'
+      : '\n\n### PILIHAN SUARA ELEVENLABS (pilih satu yang paling cocok untuk narasi bahasa Indonesia ini):\n' + voices.map((v) => '- ' + v.name + ' — ' + [Object.values(v.labels).join(', '), v.description].filter(Boolean).join(' · ')).join('\n');
+  }
   // The current definition wins over the copy stored at task creation, so prompt fixes reach tasks in flight.
   const instruction = def?.instruction || job.step_instruction;
   const ask = (extra = '') => respond({
     system: job.system_prompt + RULES + (def?.webSearch ? RESEARCH_RULES : ''),
-    user: 'INSTRUKSI TAHAPMU (' + job.step_title + '):\n' + instruction + '\n\n' + context + extra,
+    user: 'INSTRUKSI TAHAPMU (' + job.step_title + '):\n' + instruction + voiceNote + '\n\n' + context + extra,
     schema, schemaName: job.step_key, webSearch: Boolean(def?.webSearch), ctx,
     maxOutputTokens: def?.webSearch ? 16000 : 12000, timeoutMs: 300000,
   });

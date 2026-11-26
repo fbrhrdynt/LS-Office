@@ -45,6 +45,7 @@ Daren QA + preview → *review* → merge ke branch utama + push. Deploy product
 ## Environment (`/etc/ls-office/api.env`, root:ls-office 0640)
 
 Wajib: `DATABASE_URL`, `LS_OFFICE_ADMIN_TOKEN`, `OPENAI_API_KEY`, `LS_OFFICE_DATA=/var/lib/ls-office`, `MEDIA_SIGNING_KEY`.
+Suara (disarankan): `ELEVENLABS_API_KEY` → narasi memakai ElevenLabs (`ELEVENLABS_MODEL`, default `eleven_multilingual_v2`; `ELEVENLABS_SPEED`, default 1.05; `ELEVENLABS_VOICE_ID` suara cadangan). Tanpa key, suara memakai OpenAI TTS.
 Opsional: `OPENAI_MODEL` (gpt-5-mini), `OPENAI_IMAGE_MODEL` (gpt-image-2), `OPENAI_TTS_MODEL` (gpt-4o-mini-tts),
 `DAILY_BUDGET_USD` (5), `MAX_DAILY_RUNS` (60), `RENDER_CONCURRENCY` (1), `TELEGRAM_BOT_TOKEN`, kredensial sosial (bawah).
 Biaya yang tampil di aplikasi adalah **estimasi** dari tarif publik; tagihan resmi ada di dashboard OpenAI.

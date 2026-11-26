@@ -35,6 +35,15 @@ export const config = {
   videoHeight: num(env.VIDEO_HEIGHT, 1280),
   videoFps: num(env.VIDEO_FPS, 30),
 
+  // Voice: ElevenLabs when a key is configured (better Indonesian narration, one fixed voice per series), else OpenAI.
+  ttsProvider: env.TTS_PROVIDER || (env.ELEVENLABS_API_KEY ? 'elevenlabs' : 'openai'),
+  elevenKey: env.ELEVENLABS_API_KEY || '',
+  elevenModel: env.ELEVENLABS_MODEL || 'eleven_multilingual_v2',
+  elevenVoiceId: env.ELEVENLABS_VOICE_ID || '',
+  elevenSpeed: num(env.ELEVENLABS_SPEED, 1.05),
+  // ElevenLabs bills a character quota from your plan; set a per-1k-character price only if you want it in the budget.
+  elevenUsdPer1kChars: num(env.ELEVENLABS_USD_PER_1K_CHARS, 0),
+
   telegramToken: env.TELEGRAM_BOT_TOKEN || '',
 
   devDataRoot: path.resolve(env.LS_OFFICE_DEV_DATA || '/var/lib/ls-office-dev'),

@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import http from 'node:http';
 import path from 'node:path';
 import { config } from '../lib/config.mjs';
-import { generateImage, editImage, speak, recordSpeech, transcribeWords } from '../lib/ai.mjs';
+import { generateImage, editImage, speak, recordSpeech, transcribeWords, speakEleven, listElevenVoices } from '../lib/ai.mjs';
 import { isStopped } from '../lib/engine.mjs';
 
 const exec = promisify(execFile);
@@ -151,16 +151,34 @@ export async function produceVideo(job, { pool, signal }) {
   });
 
   // 2. Voice-over per scene, so scene timing follows the real audio.
-  const voiceKey = audio.voice + '|' + audio.instructions + '|' + config.ttsModel;
-  const clips = await pool2(board.scenes, 3, async (scene, i) => {
-    const said = spokenText(scene.narration, audio.pronunciations);
-    const file = path.join(cache, 'vo-' + sha(voiceKey + '|' + said) + '.mp3');
-    if (!(await exists(file))) {
-      const bytes = await speak({ input: said, voice: audio.voice, instructions: audio.instructions, ctx });
-      await writeFile(file, bytes);
-      await recordSpeech(ctx, await duration(file));
+  const eleven = config.ttsProvider === 'elevenlabs';
+  let voiceId = null;
+  if (eleven) {
+    if (series?.voice_id) voiceId = series.voice_id;
+    else {
+      const voices = await listElevenVoices();
+      voiceId = voices.find((v) => v.name === audio.voice)?.id || config.elevenVoiceId || voices[0]?.id;
+      if (!voiceId) throw new Error('Tidak ada suara ElevenLabs yang bisa dipakai');
+      if (series) await pool.query('UPDATE series SET voice_id=$2,voice_name=$3,updated_at=now() WHERE id=$1 AND voice_id IS NULL', [series.id, voiceId, voices.find((v) => v.id === voiceId)?.name || audio.voice]);
     }
-    return { file, seconds: await duration(file) };
+  }
+  const voiceKey = eleven ? 'eleven|' + config.elevenModel + '|' + voiceId + '|' + config.elevenSpeed : audio.voice + '|' + audio.instructions + '|' + config.ttsModel;
+  const said = board.scenes.map((scene) => spokenText(scene.narration, audio.pronunciations));
+  const clips = await pool2(board.scenes, eleven ? 2 : 3, async (scene, i) => {
+    const file = path.join(cache, 'vo-' + sha(voiceKey + '|' + said[i]) + '.mp3');
+    const timing = file.replace(/\.mp3$/, '.words.json');
+    if (!(await exists(file))) {
+      if (eleven) {
+        const r = await speakEleven({ text: said[i], voiceId, previousText: said[i - 1] || '', nextText: said[i + 1] || '', ctx });
+        await writeFile(timing, JSON.stringify(r.words));
+        await writeFile(file, r.bytes);
+      } else {
+        await writeFile(file, await speak({ input: said[i], voice: audio.voice, instructions: audio.instructions, ctx }));
+        await recordSpeech(ctx, await duration(file));
+      }
+    }
+    const words = (await exists(timing)) ? JSON.parse(await readFile(timing, 'utf8')) : null;
+    return { file, seconds: await duration(file), words };
   });
 
   // 3. One narration track with a short breath between scenes.
@@ -180,7 +198,10 @@ export async function produceVideo(job, { pool, signal }) {
     const start = t;
     const end = t + clips[i].seconds;
     let w;
-    try { w = alignWords(scene.narration, await transcribeWords({ file: clips[i].file, ctx }), start); } catch (e) { console.warn('transcribe failed, even timing', e.message); w = evenWords(scene.narration, start, end); }
+    try {
+      // ElevenLabs returns timing with the audio; OpenAI voices are timed with Whisper.
+      w = alignWords(scene.narration, clips[i].words?.length ? clips[i].words : await transcribeWords({ file: clips[i].file, ctx }), start);
+    } catch (e) { console.warn('transcribe failed, even timing', e.message); w = evenWords(scene.narration, start, end); }
     words.push(...w);
     scenes.push({ start, end: i === board.scenes.length - 1 ? end + (series ? 2.4 : 0.8) : end + gap, image: images[i], labels: board.template === 'story' ? [] : scene.labels || [], card: scene.card });
     t = end + gap;
@@ -224,7 +245,7 @@ export async function produceVideo(job, { pool, signal }) {
     'VIDEO SELESAI DIRENDER',
     'Judul: ' + board.title,
     'Template: ' + board.template + ' · ' + board.scenes.length + ' adegan · ' + total.toFixed(1) + ' detik',
-    'Suara: ' + audio.voice,
+    'Suara: ' + (eleven ? 'ElevenLabs · ' + (series?.voice_name || audio.voice) : 'OpenAI · ' + audio.voice),
     'Waktu render: ' + Math.round((Date.now() - started) / 1000) + ' detik',
   ].join('\n');
   return { text, artifact: { path: out, mime: 'video/mp4', name } };
