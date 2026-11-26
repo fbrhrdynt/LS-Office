@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { stat } from 'node:fs/promises';
 import { startWorker } from './lib/runner.mjs';
-import { respond, listElevenVoices } from './lib/ai.mjs';
+import { respond, listElevenVoices, narrationVoices } from './lib/ai.mjs';
 import { workContext } from './lib/engine.mjs';
 import { answerNextMessage } from './lib/chat.mjs';
 import { config } from './lib/config.mjs';
@@ -31,7 +31,7 @@ async function agentStep(job, { pool }) {
   if (job.step_key === 'audio_direction' && config.ttsProvider === 'elevenlabs') {
     // Maya chooses from the voices that really exist on the ElevenLabs account; a series keeps its first voice.
     const fixed = job.series_id ? (await pool.query('SELECT voice_name FROM series WHERE id=$1', [job.series_id])).rows[0]?.voice_name : null;
-    const voices = (await listElevenVoices()).slice(0, 80);
+    const voices = narrationVoices(await listElevenVoices()).slice(0, 80);
     if (!voices.length) throw new Error('Akun ElevenLabs belum punya suara');
     const names = fixed ? [fixed] : [...new Set(voices.map((v) => v.name))];
     schema = { ...schema, properties: { ...schema.properties, voice: { type: 'string', enum: names, description: 'ElevenLabs voice name' } } };

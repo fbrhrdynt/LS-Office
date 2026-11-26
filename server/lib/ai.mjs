@@ -127,6 +127,12 @@ export async function listElevenVoices() {
   return voices;
 }
 
+/** Indonesian voices first: if the account has any, only those are offered for narration. */
+export function narrationVoices(voices) {
+  const indonesian = voices.filter((v) => v.labels?.language === 'id' || /^id(-|$)/i.test(v.labels?.locale || ''));
+  return indonesian.length ? indonesian : voices;
+}
+
 /** Character-level alignment -> words with start/end seconds. */
 export function alignmentToWords(alignment) {
   const chars = alignment?.characters || [];

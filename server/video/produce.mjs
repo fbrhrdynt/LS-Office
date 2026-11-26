@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import http from 'node:http';
 import path from 'node:path';
 import { config } from '../lib/config.mjs';
-import { generateImage, editImage, speak, recordSpeech, transcribeWords, speakEleven, listElevenVoices } from '../lib/ai.mjs';
+import { generateImage, editImage, speak, recordSpeech, transcribeWords, speakEleven, listElevenVoices, narrationVoices } from '../lib/ai.mjs';
 import { isStopped } from '../lib/engine.mjs';
 
 const exec = promisify(execFile);
@@ -157,7 +157,7 @@ export async function produceVideo(job, { pool, signal }) {
     if (series?.voice_id) voiceId = series.voice_id;
     else {
       const voices = await listElevenVoices();
-      voiceId = voices.find((v) => v.name === audio.voice)?.id || config.elevenVoiceId || voices[0]?.id;
+      voiceId = voices.find((v) => v.name === audio.voice)?.id || config.elevenVoiceId || narrationVoices(voices)[0]?.id;
       if (!voiceId) throw new Error('Tidak ada suara ElevenLabs yang bisa dipakai');
       if (series) await pool.query('UPDATE series SET voice_id=$2,voice_name=$3,updated_at=now() WHERE id=$1 AND voice_id IS NULL', [series.id, voiceId, voices.find((v) => v.id === voiceId)?.name || audio.voice]);
     }
