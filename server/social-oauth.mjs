@@ -94,9 +94,9 @@ async function exchange(platform, code) {
     const pages = await safeJson(pagesResponse);
     const accounts = [];
     for (const page of pages.data || []) {
-      if (page.id && page.name && page.access_token) accounts.push({ platform: 'facebook', id: page.id, name: page.name, accessToken: page.access_token, refreshToken: null, expiresIn: long.expires_in || short.expires_in, scopes: ['pages_show_list','pages_read_engagement','pages_manage_posts'] });
+      if (page.id && page.name && page.access_token) accounts.push({ platform: 'facebook', id: page.id, name: page.name, accessToken: page.access_token, refreshToken: null, expiresIn: long.expires_in || short.expires_in, scopes: ['pages_show_list','pages_read_engagement','pages_manage_posts'], metadata: { pageId: page.id } });
       const instagram = page.instagram_business_account;
-      if (instagram?.id) accounts.push({ platform: 'instagram', id: instagram.id, name: instagram.username || page.name, accessToken: page.access_token, refreshToken: null, expiresIn: long.expires_in || short.expires_in, scopes: ['instagram_basic','instagram_content_publish','pages_show_list'] });
+      if (instagram?.id) accounts.push({ platform: 'instagram', id: instagram.id, name: instagram.username || page.name, accessToken: page.access_token, refreshToken: null, expiresIn: long.expires_in || short.expires_in, scopes: ['instagram_basic','instagram_content_publish','pages_show_list'], metadata: { pageId: page.id } });
     }
     if (!accounts.length) throw new Error('Meta authorization succeeded, but no accessible Facebook Page was found. Link an Instagram Professional account to a Facebook Page and grant Page permissions.');
     return accounts;
@@ -144,7 +144,7 @@ export async function completeOAuth(pool, platform, code, state, sessionHash) {
         `INSERT INTO social_accounts(platform,external_account_id,account_name,access_token_ciphertext,refresh_token_ciphertext,token_expires_at,scopes,status,metadata)
          VALUES($1,$2,$3,$4,$5,$6,$7,'connected',$8::jsonb)
          ON CONFLICT(platform,external_account_id) DO UPDATE SET account_name=EXCLUDED.account_name,access_token_ciphertext=EXCLUDED.access_token_ciphertext,refresh_token_ciphertext=EXCLUDED.refresh_token_ciphertext,token_expires_at=EXCLUDED.token_expires_at,scopes=EXCLUDED.scopes,status='connected',metadata=EXCLUDED.metadata,updated_at=now()`,
-        [account.platform, account.id, account.name, encryptToken(account.accessToken), account.refreshToken ? encryptToken(account.refreshToken) : null, expiresAt, account.scopes, JSON.stringify({ provider: platform })]
+        [account.platform, account.id, account.name, encryptToken(account.accessToken), account.refreshToken ? encryptToken(account.refreshToken) : null, expiresAt, account.scopes, JSON.stringify(account.metadata || { provider: platform })]
       );
     }
     await client.query('COMMIT');
