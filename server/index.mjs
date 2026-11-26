@@ -148,7 +148,7 @@ const server = http.createServer(async (req, res) => {
           await client.query("UPDATE workflow_steps SET status='completed',finished_at=now() WHERE id=$1", [currentGate.id]);
           if (currentGate.step_key === 'distribution') {
             await client.query("INSERT INTO publication_jobs(task_id,platform,status) VALUES($1,'instagram','awaiting_connection'),($1,'tiktok','awaiting_connection'),($1,'youtube','awaiting_connection'),($1,'facebook','awaiting_connection') ON CONFLICT(task_id,platform) DO NOTHING", [m[1]]);
-            status = 'completed';
+            status = 'blocked';
             publicationJobsCreated = true;
           } else {
             status = 'queued';
