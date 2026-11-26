@@ -58,7 +58,7 @@ export async function buildAuthorizationUrl(platform, state) {
     const params = form({
       client_key: required(process.env.TIKTOK_CLIENT_KEY, 'TIKTOK_CLIENT_KEY'),
       response_type: 'code',
-      scope: 'user.info.basic,video.publish',
+      scope: 'user.info.basic,user.info.profile,video.publish',
       redirect_uri: required(process.env.TIKTOK_REDIRECT_URI, 'TIKTOK_REDIRECT_URI'),
       state
     });
@@ -69,7 +69,7 @@ export async function buildAuthorizationUrl(platform, state) {
       client_id: required(process.env.GOOGLE_CLIENT_ID, 'GOOGLE_CLIENT_ID'),
       redirect_uri: required(process.env.GOOGLE_REDIRECT_URI, 'GOOGLE_REDIRECT_URI'),
       response_type: 'code',
-      scope: 'openid email https://www.googleapis.com/auth/youtube.upload',
+      scope: 'openid email https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
       access_type: 'offline',
       prompt: 'consent',
       include_granted_scopes: 'true',
