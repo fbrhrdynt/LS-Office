@@ -3,6 +3,8 @@ import { flushSync } from 'react-dom';
 import { GAYA, KANTOR, TAMPIL_PEMILIH_GAYA } from './config';
 import { DAFTAR_GAYA, KUNCI_SIMPAN, cariGaya, gayaAwal, type GayaId } from './gaya/daftar';
 import { IDLE_LABEL, idleAt, isNight, isoDay, lapseAt, missionBoard, officeDesks, params as readParams, type DeskState, type IdleSpot } from './office';
+import CommandCenter from './CommandCenter';
+type RuntimeTask = { id: string; assignee_id: string; title: string; status: string; created_at: string };
 
 const OfficeScene = lazy(() => import('./OfficeScene'));
 
@@ -34,6 +36,8 @@ export default function App() {
   const [open, setOpen] = useState<DeskState | null>(null);
   const [agentsOpen, setAgentsOpen] = useState(true);
   const [reportsOpen, setReportsOpen] = useState(true);
+  const [runtimeTasks, setRuntimeTasks] = useState<RuntimeTask[]>([]);
+  const [commandOpen, setCommandOpen] = useState(false);
   const drive = useRef<((t: number) => void) | null>(null);
   const anchors = useRef(new Map<string, HTMLElement>());
   const boardAnchor = useRef<HTMLElement | null>(null);
@@ -85,13 +89,16 @@ export default function App() {
   const sourceDesks = officeDesks(isoDay(now), time, p.alwaysWork);
   const desks = PERSONNEL.map((person, index): DeskState => {
     const source = sourceDesks[index % sourceDesks.length]!;
+    const latestTask = runtimeTasks.filter((task) => task.assignee_id === person.key).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    const runtimeDoing = latestTask ? ({ queued: { activity: 'siaga' as const, label: 'task dalam antrean' }, assigned: { activity: 'siaga' as const, label: 'task ditugaskan' }, in_progress: { activity: 'kerja' as const, label: `mengerjakan: ${latestTask.title}` }, review: { activity: 'laporan' as const, label: 'hasil menunggu review' }, failed: { activity: 'siaga' as const, label: 'task gagal · perlu perhatian' }, blocked: { activity: 'siaga' as const, label: 'task terblokir' }, completed: { activity: 'siaga' as const, label: 'task selesai' }, changes_requested: { activity: 'kerja' as const, label: 'revisi diminta' }, rejected: { activity: 'siaga' as const, label: 'task ditolak' }, cancelled: { activity: 'siaga' as const, label: 'task dibatalkan' } } as Record<string, DeskState['doing']>)[latestTask.status] : null;
     return {
       ...source,
+      doing: runtimeDoing ?? { activity: 'siaga', label: 'menunggu penugasan' },
       desk: { key: person.key, room: person.room, color: person.color, x: person.x, z: person.z },
       agen: { key: person.key, nama: person.nama, tugas: person.tugas, ruang: person.room, warna: person.color, x: person.x, z: person.z },
-      bubble: null,
-      waiting: [],
-      urgent: [],
+      bubble: latestTask?.title ?? null,
+      waiting: latestTask?.status === 'review' ? ['Hasil menunggu persetujuan reviewer'] : [],
+      urgent: latestTask?.status === 'failed' || latestTask?.status === 'blocked' ? ['Perlu perhatian'] : [],
     };
   });
   const board = missionBoard(desks);
@@ -120,6 +127,9 @@ export default function App() {
           <span className="ko-board-pin" ref={(el) => void (boardAnchor.current = el)}>LogiSource Office</span>
         </div>
       </div>
+
+      <button className="ko-command-toggle" type="button" onClick={() => setCommandOpen((v) => !v)} aria-expanded={commandOpen}>⌘ Command Center</button>
+      {commandOpen && <div className="ko-dashboard"><CommandCenter onRuntime={setRuntimeTasks} /></div>}
 
       <header className="ko-hud">
         <div className="ko-brand">
