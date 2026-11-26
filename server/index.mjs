@@ -67,6 +67,22 @@ const server = http.createServer(async (req, res) => {
       const q = await pool.query("SELECT id,name,role,department,manager_key AS \"managerKey\" FROM employees WHERE active AND id <> 'alex' ORDER BY department,name");
       return json(res, 200, { employees: q.rows });
     }
+    if (route === '/api/social/accounts' && req.method === 'GET') {
+      const connected = await pool.query("SELECT platform,external_account_id AS \"accountId\",account_name AS \"accountName\",status,scopes,token_expires_at AS \"tokenExpiresAt\",connected_at AS \"connectedAt\" FROM social_accounts ORDER BY platform,account_name");
+      const configured = {
+        instagram: Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET && process.env.META_REDIRECT_URI),
+        facebook: Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET && process.env.META_REDIRECT_URI),
+        tiktok: Boolean(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET && process.env.TIKTOK_REDIRECT_URI),
+        youtube: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI)
+      };
+      const requirements = {
+        instagram: ['Meta Developer App', 'Instagram Professional account', 'Facebook Page linked to Instagram'],
+        facebook: ['Meta Developer App', 'Facebook Page', 'Page publishing permissions'],
+        tiktok: ['TikTok for Developers app', 'Content Posting API product', 'video.publish approval and app audit for public posts'],
+        youtube: ['Google Cloud project', 'YouTube Data API v3 enabled', 'OAuth consent configuration']
+      };
+      return json(res, 200, { platforms: Object.keys(configured).map(platform => ({ platform, configured: configured[platform], accounts: connected.rows.filter(account => account.platform === platform), requirements: requirements[platform] })) });
+    }
     if (route === '/api/overview' && req.method === 'GET') {
       const c = await pool.query('SELECT status,count(*)::int AS count FROM tasks GROUP BY status');
       const r = await pool.query("SELECT e.id,e.task_id AS \"taskId\",e.event_type AS type,e.created_at AS \"createdAt\",t.title FROM task_events e LEFT JOIN tasks t ON t.id=e.task_id ORDER BY e.created_at DESC LIMIT 12");
