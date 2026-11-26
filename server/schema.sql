@@ -96,3 +96,14 @@ CREATE TABLE IF NOT EXISTS social_accounts (
  UNIQUE(platform,external_account_id)
 );
 CREATE INDEX IF NOT EXISTS idx_social_accounts_platform_status ON social_accounts(platform,status);
+
+-- One-time OAuth state, bound to an authenticated Director session.
+CREATE TABLE IF NOT EXISTS social_oauth_states (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ state_hash text UNIQUE NOT NULL,
+ platform text NOT NULL CHECK(platform IN ('instagram','facebook','tiktok','youtube')),
+ session_hash text NOT NULL REFERENCES director_sessions(token_hash) ON DELETE CASCADE,
+ expires_at timestamptz NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_social_oauth_states_expiry ON social_oauth_states(expires_at);
