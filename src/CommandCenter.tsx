@@ -38,8 +38,8 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
 
   const refresh = useCallback(async () => {
     try {
-      const [e, t, o] = await Promise.all([request('/employees'), request('/tasks'), request('/overview')]);
-      setEmployees(e.employees || []); setTasks(t.tasks || []); setOverview(o); onRuntime?.(t.tasks || []);
+      const [e, t, o, s] = await Promise.all([request('/employees'), request('/tasks'), request('/overview'), request('/social/accounts')]);
+      setEmployees(e.employees || []); setTasks(t.tasks || []); setOverview(o); setSocialPlatforms(s.platforms || []); onRuntime?.(t.tasks || []);
       setAuthenticated(true); setError('');
     } catch (e) {
       setAuthenticated(false);
@@ -71,7 +71,7 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
 
   const logout = async () => {
     try { await request('/auth/logout', { method: 'POST', body: '{}' }); }
-    finally { setAuthenticated(false); setTasks([]); setEmployees([]); setOverview({ counts: {}, recent: [] }); setDetail(null); }
+    finally { setAuthenticated(false); setTasks([]); setEmployees([]); setOverview({ counts: {}, recent: [] }); setSocialPlatforms([]); setDetail(null); }
   };
 
   const create = async (e: FormEvent) => {
