@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, feat/director-session-video-pipeline, feat/approval-gated-production]
   push:
-    branches: [main, feat/director-session-video-pipeline, feat/approval-gated-production]
+    branches: [main, feat/director-session-video-pipeline, feat/approval-gated-production, feat/social-account-foundation]
 
 permissions:
   contents: read
