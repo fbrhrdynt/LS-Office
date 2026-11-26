@@ -64,3 +64,12 @@ Workflow steps are created atomically with the parent task. Their assignee, stat
 - Olivier prepares platform-specific distribution material and pauses for the final Director approval.
 - Final approval creates one publication job each for Instagram, TikTok, YouTube and Facebook. The jobs are persisted as `awaiting_connection`; the task detail view shows this state.
 - Important: the current implementation creates the publication queue but does not upload or publish media yet. Actual publishing requires official OAuth/app credentials, platform-specific upload flows, and a publicly reachable media URL or platform upload session. Do not mark a post as published until the platform returns a verified post ID/URL.
+
+
+## Social account connection foundation
+
+- Director-only GET /api/social/accounts reports OAuth configuration readiness and connected-account metadata for Instagram, Facebook, TikTok and YouTube. It never returns credentials or token values.
+- PostgreSQL migration adds the social_accounts vault table with ciphertext-only token columns, expiry, scopes and connection status. The application must encrypt tokens before writing to this table; plaintext tokens must never be persisted or logged.
+- This phase does not yet implement OAuth redirects, callbacks, token refresh, upload workers or publication. Platform rows remain unconnected until a verified OAuth flow is implemented and completed.
+- Configure provider applications only when ready: Meta App for Instagram/Facebook, TikTok for Developers with Content Posting API, and Google Cloud OAuth with YouTube Data API v3. Do not put client secrets in Vite/browser variables or Git.
+- Instagram publishing requires an Instagram Professional account linked to a Facebook Page. TikTok Direct Post requires the approved video.publish scope; unaudited clients are restricted to private visibility. See official platform documentation before enabling publishing.
