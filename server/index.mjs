@@ -68,7 +68,7 @@ const server = http.createServer(async (req, res) => {
       const code = url.searchParams.get('code');
       const state = url.searchParams.get('state');
       if (!code || !state || code.length > 4096 || state.length > 256) return json(res, 400, { error: 'Invalid OAuth callback parameters' });
-      const accounts = await completeOAuth(pool, platform, code, state, hash(sessionToken));
+      await completeOAuth(pool, platform, code, state, hash(sessionToken));
       res.writeHead(303, { location: '/?social=connected', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
       return res.end();
     }
@@ -84,7 +84,8 @@ const server = http.createServer(async (req, res) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !checkOrigin(req)) return json(res, 403, { error: 'Origin not allowed' });
     const socialConnect = route.match(/^\/api\/social\/(instagram|facebook|tiktok|youtube)\/connect$/);
     if (socialConnect && req.method === 'GET') {
-      const platform = socialConnect[1];
+      const requestedPlatform = socialConnect[1];
+      const platform = ['instagram', 'facebook'].includes(requestedPlatform) ? 'facebook' : requestedPlatform;
       if (!oauthConfiguration(platform) || !process.env.SOCIAL_TOKEN_ENCRYPTION_KEY) return json(res, 503, { error: 'OAuth provider and token-encryption configuration are required' });
       const sessionToken = cookies(req)[COOKIE];
       if (!sessionToken) return json(res, 401, { error: 'Director session required' });
