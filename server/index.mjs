@@ -57,7 +57,7 @@ const server = http.createServer(async (req, res) => {
       const session = await authenticate(req);
       return json(res, session ? 200 : 401, session ? { authenticated: true } : { authenticated: false });
     }
-    const socialCallback = route.match(/^\\/api\\/social\\/(instagram|facebook|tiktok|youtube)\\/callback$/);
+    const socialCallback = route.match(/^\/api\/social\/(instagram|facebook|tiktok|youtube)\/callback$/);
     if (socialCallback && req.method === 'GET') {
       const platform = socialCallback[1];
       const sessionToken = cookies(req)[COOKIE];
@@ -82,7 +82,7 @@ const server = http.createServer(async (req, res) => {
     const session = await authenticate(req);
     if (!session) return json(res, 401, { error: 'Unauthorized' });
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !checkOrigin(req)) return json(res, 403, { error: 'Origin not allowed' });
-    const socialConnect = route.match(/^\\/api\\/social\\/(instagram|facebook|tiktok|youtube)\\/connect$/);
+    const socialConnect = route.match(/^\/api\/social\/(instagram|facebook|tiktok|youtube)\/connect$/);
     if (socialConnect && req.method === 'GET') {
       const platform = socialConnect[1];
       if (!oauthConfiguration(platform) || !process.env.SOCIAL_TOKEN_ENCRYPTION_KEY) return json(res, 503, { error: 'OAuth provider and token-encryption configuration are required' });
