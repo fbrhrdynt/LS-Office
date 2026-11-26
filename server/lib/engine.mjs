@@ -320,7 +320,8 @@ export function buildPublishPlan(pkg, opts = {}, meta = {}) {
   let when = opts.scheduledAt ? new Date(opts.scheduledAt) : parseLocal(pkg?.recommended_time);
   const min = Date.now() + 5 * 60000;
   if (!when || Number.isNaN(when.getTime()) || when.getTime() < min) when = new Date(min);
-  const affiliate = pkg?.affiliate_cta ? '\n\n' + pkg.affiliate_cta : '';
+  // An affiliate CTA is only allowed when the Director actually gave an affiliate product for this task.
+  const affiliate = pkg?.affiliate_cta && meta?.affiliate ? '\n\n' + pkg.affiliate_cta : '';
   return {
     scheduledAt: when.toISOString(),
     posts: [...new Set(wanted)].filter((p) => ['tiktok', 'instagram', 'youtube', 'facebook'].includes(p)).map((platform) => {

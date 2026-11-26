@@ -50,7 +50,8 @@ t('captions keep the script spelling when word counts match', () => {
 });
 t('publish plan: Director overrides, future time, affiliate CTA once', () => {
   const pkg = { posts: [{ platform: 'tiktok', title: 'T', caption: 'Halo', hashtags: ['fyp', '#edukasi'] }, { platform: 'instagram', title: 'I', caption: 'Hai', hashtags: [] }], recommended_time: '2020-01-01 19:00', affiliate_cta: 'Cek keranjang kuning!' };
-  const plan = buildPublishPlan(pkg, { platforms: ['tiktok'] });
+  assert.ok(!buildPublishPlan(pkg, {}, {}).posts[0].caption.includes('keranjang'), 'no affiliate CTA without an affiliate product');
+  const plan = buildPublishPlan(pkg, { platforms: ['tiktok'] }, { affiliate: { product: 'x' } });
   assert.deepEqual(plan.posts.map((p) => p.platform), ['tiktok']);
   assert.ok(new Date(plan.scheduledAt).getTime() > Date.now());
   assert.ok(plan.posts[0].caption.endsWith('Cek keranjang kuning!'));

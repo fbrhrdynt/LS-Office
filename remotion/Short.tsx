@@ -95,7 +95,9 @@ const Pointer: React.FC<{ label: Label; delay: number }> = ({ label, delay }) =>
   const w = text.length * 15 + 30;
   const left = x > width / 2;
   const tx = Math.max(16, Math.min(width - w - 16, left ? x - w - 40 : x + 40));
-  const ty = Math.max(90, y - 90);
+  // Keep pointer labels out of the caption band (58%-72% of the height) and the hook area.
+  let ty = Math.max(120, y - 90);
+  if (ty + 44 > height * 0.56 && ty < height * 0.74) ty = y < height * 0.65 ? height * 0.56 - 50 : height * 0.74;
   return (
     <>
       <svg width={width} height={height} style={{ position: 'absolute', inset: 0 }}>

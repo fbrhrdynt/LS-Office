@@ -9,6 +9,7 @@ User=ls-office
 Group=ls-office
 WorkingDirectory=/opt/ls-office
 EnvironmentFile=/etc/ls-office/api.env
+Environment=HOME=/var/lib/ls-office XDG_CACHE_HOME=/var/lib/ls-office/.cache
 Environment=REMOTION_BUNDLE=/opt/ls-office/remotion-build
 ExecStart=/usr/bin/node /opt/ls-office/server/render-worker.mjs
 Restart=on-failure

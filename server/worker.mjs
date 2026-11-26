@@ -57,7 +57,7 @@ async function validate(pool, job, json) {
     const total = json.scenes.reduce((n, x) => n + words(x.spoken), 0);
     const bad = json.scenes.map((x, i) => (hasCues(x.spoken) || /[()[\]]/.test(x.spoken) ? i + 1 : 0)).filter(Boolean);
     if (bad.length) return 'Adegan ' + bad.join(', ') + ' masih berisi arahan/label/tanda kurung di field spoken. Pindahkan ke visual_note.';
-    if (total < 80 || total > 190) return 'Total kata yang diucapkan ' + total + '; harus 110-160.';
+    if (total < 80 || total > 150) return 'Total kata yang diucapkan ' + total + '; harus 95-135 supaya video 45-60 detik.';
     if (json.scenes.length < 3) return 'Minimal 4 adegan.';
   }
   if (key === 'storyboard') {
@@ -76,7 +76,12 @@ async function validate(pool, job, json) {
       if (Math.abs(got - want) > Math.max(8, want * 0.12)) return 'Narasi storyboard ' + got + ' kata, naskah Felix ' + want + ' kata. Salin persis field spoken dari naskah.';
     }
   }
-  if (key === 'distribution' && !json.posts?.length) return 'Siapkan caption minimal untuk satu platform';
+  if (key === 'distribution') {
+    if (!json.posts?.length) return 'Siapkan caption minimal untuk satu platform';
+    const leak = json.posts.find((p) => /\b(catatan|director|ethan|render|dipangkas|persetujuan|internal|draft|TODO)\b/i.test(p.caption + ' ' + p.title));
+    if (leak) return 'Caption ' + leak.platform + ' berisi catatan internal. Caption tayang publik; pindahkan catatan ke schedule_reason.';
+    if (!job.meta?.affiliate && (json.affiliate_cta.trim() || json.posts.some((p) => /affiliate|keranjang kuning/i.test(p.caption)))) return 'Task ini tidak punya produk affiliate: kosongkan affiliate_cta dan jangan menyebut affiliate/keranjang di caption.';
+  }
   return null;
 }
 
