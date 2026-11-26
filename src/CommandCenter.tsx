@@ -4,7 +4,7 @@ type Employee = { id: string; name: string; role: string; department: string; ma
 type Task = { id: string; title: string; instruction: string; assignee_id: string; reviewer_id: string | null; priority: string; status: string; task_type?: string; artifact_path?: string | null; artifact_name?: string | null; assignee_name?: string; created_at: string };
 type Run = { id: string; status: string; output_text?: string; error_message?: string };
 type WorkflowStep = { id: string; step_order: number; step_key: string; title: string; status: string; requires_approval?: boolean; assignee_name?: string | null; output_text?: string | null };
-type PublicationJob = { platform: string; status: string; post_url?: string | null; error_message?: string | null };
+type PublicationJob = { platform: string; status: string; post_url?: string | null; error_message?: string | null };\ntype SocialPlatform = { platform: string; configured: boolean; accounts: Array<{ accountId: string; accountName: string; status: string }>; requirements: string[] };
 type Overview = { counts: Record<string, number>; recent: Array<{ id: number; taskId: string; type: string; createdAt: string; title?: string }> };
 const labels: Record<string, string> = { queued: 'Queued', assigned: 'Assigned', in_progress: 'Working', review: 'Review', completed: 'Completed', failed: 'Failed', blocked: 'Blocked', changes_requested: 'Changes requested', rejected: 'Rejected', cancelled: 'Cancelled' };
 
@@ -25,7 +25,7 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
   const [priority, setPriority] = useState('normal');
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState<{ task: Task; runs: Run[]; workflowSteps: WorkflowStep[]; publicationJobs: PublicationJob[] } | null>(null);
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState('');\n  const [socialPlatforms, setSocialPlatforms] = useState<SocialPlatform[]>([]);
 
   const request = useCallback(async (path: string, init: RequestInit = {}) => {
     const r = await fetch('/api' + path, { ...init, credentials: 'same-origin', headers: { 'content-type': 'application/json', ...(init.headers || {}) } });
@@ -113,6 +113,7 @@ export default function CommandCenter({ onRuntime }: { onRuntime?: (tasks: Task[
     {authenticated && <>
       <div className="cc-list-head"><span className="cc-note">Session aktif · login tersimpan dengan secure HttpOnly cookie</span><button type="button" onClick={() => void logout()}>Logout</button></div>
       <div className="cc-metrics">{[['Active', (overview.counts.in_progress || 0) + (overview.counts.assigned || 0)], ['Queued', overview.counts.queued || 0], ['Review', overview.counts.review || 0], ['Completed', overview.counts.completed || 0]].map(([k, v]) => <div key={String(k)}><b>{v}</b><span>{k}</span></div>)}</div>
+      <section className="cc-workflow"><h3>Social account connections</h3><p className="cc-note">Status konfigurasi OAuth dan akun terhubung. Belum ada publikasi otomatis sampai integrasi resmi dan izin platform aktif.</p>{socialPlatforms.map(platform => <article className="cc-workflow-step" key={platform.platform}><div><b>{platform.platform}</b><small>{platform.accounts.length ? platform.accounts.map(account => account.accountName + ' · ' + account.status).join(', ') : 'Belum ada akun terhubung'}</small></div><em data-status={platform.configured ? 'ready' : 'blocked'}>{platform.accounts.length ? 'Connected' : platform.configured ? 'OAuth configured' : 'Setup required'}</em><details><summary>Persyaratan</summary><ul>{platform.requirements.map(item => <li key={item}>{item}</li>)}</ul></details></article>)}</section>
       <div className="cc-workspace"><div className="cc-compose"><div className="cc-tabs"><button type="button" className={mode === 'chat' ? 'active' : ''} onClick={() => setMode('chat')}>Chat Command</button><button type="button" className={mode === 'assign' ? 'active' : ''} onClick={() => setMode('assign')}>Task Assignment</button></div>
         <form onSubmit={create}>
           <label>Deliverable<select value={taskType} onChange={e => setTaskType(e.target.value as 'text' | 'animated_video')}><option value="text">Text / Research</option><option value="animated_video">Animated drama video (MP4)</option></select></label>
