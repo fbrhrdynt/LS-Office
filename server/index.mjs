@@ -180,38 +180,41 @@ const server = http.createServer(async (req, res) => {
           await client.query('ROLLBACK');
           return json(res, 409, { error: 'Task not in Director review or reviewer mismatch' });
         }
-        const gate = await client.query("SELECT id,step_key FROM workflow_steps WHERE task_id=$1 AND status='awaiting_approval' ORDER BY step_order LIMIT 1 FOR UPDATE", [m[1]]);
-        if (!gate.rowCount) {
+        const currentTask = task.rows[0];
+        const gate = currentTask.task_type === 'animated_video'
+          ? await client.query("SELECT id,step_key FROM workflow_steps WHERE task_id=$1 AND status='awaiting_approval' ORDER BY step_order LIMIT 1 FOR UPDATE", [m[1]])
+          : { rowCount: 0, rows: [] };
+        if (currentTask.task_type === 'animated_video' && !gate.rowCount) {
           await client.query('ROLLBACK');
           return json(res, 409, { error: 'No workflow checkpoint is waiting for Director approval' });
         }
-        const currentGate = gate.rows[0];
+        const currentGate = gate.rows[0] || null;
         let status;
         let publicationJobsCreated = false;
         if (b.decision === 'approved') {
-          if (currentGate.step_key === 'distribution' && !task.rows[0].artifact_path) {
+          if (currentGate?.step_key === 'distribution' && !currentTask.artifact_path) {
             await client.query('ROLLBACK');
             return json(res, 409, { error: 'Final approval blocked: video artifact is missing' });
           }
-          await client.query("UPDATE workflow_steps SET status='completed',finished_at=now() WHERE id=$1", [currentGate.id]);
-          if (currentGate.step_key === 'distribution') {
+          if (currentGate) await client.query("UPDATE workflow_steps SET status='completed',finished_at=now() WHERE id=$1", [currentGate.id]);
+          if (currentGate?.step_key === 'distribution') {
             await client.query("INSERT INTO publication_jobs(task_id,platform,status) VALUES($1,'instagram','awaiting_connection'),($1,'tiktok','awaiting_connection'),($1,'youtube','awaiting_connection'),($1,'facebook','awaiting_connection') ON CONFLICT(task_id,platform) DO NOTHING", [m[1]]);
             status = 'blocked';
             publicationJobsCreated = true;
           } else {
-            status = 'queued';
+            status = currentGate ? 'queued' : 'completed';
           }
         } else if (b.decision === 'changes_requested') {
-          await client.query("UPDATE workflow_steps SET status='pending',output_text=NULL,started_at=NULL,finished_at=NULL WHERE id=$1", [currentGate.id]);
+          if (currentGate) await client.query("UPDATE workflow_steps SET status='pending',output_text=NULL,started_at=NULL,finished_at=NULL WHERE id=$1", [currentGate.id]);
           status = 'queued';
         } else {
-          await client.query("UPDATE workflow_steps SET status='skipped' WHERE task_id=$1 AND status IN ('pending','awaiting_approval')", [m[1]]);
+          if (currentGate) await client.query("UPDATE workflow_steps SET status='skipped' WHERE task_id=$1 AND status IN ('pending','awaiting_approval')", [m[1]]);
           status = 'rejected';
         }
         await client.query('UPDATE tasks SET status=$2,updated_at=now() WHERE id=$1', [m[1], status]);
-        await client.query('INSERT INTO task_events(task_id,event_type,payload) VALUES($1,$2,$3)', [m[1], 'review_' + b.decision, JSON.stringify({ notes: String(b.notes || '').slice(0, 2000), checkpoint: currentGate.step_key, publicationJobsCreated })]);
+        await client.query('INSERT INTO task_events(task_id,event_type,payload) VALUES($1,$2,$3)', [m[1], 'review_' + b.decision, JSON.stringify({ notes: String(b.notes || '').slice(0, 2000), checkpoint: currentGate?.step_key || 'task_review', publicationJobsCreated })]);
         await client.query('COMMIT');
-        return json(res, 200, { ok: true, status, checkpoint: currentGate.step_key, publicationJobsCreated });
+        return json(res, 200, { ok: true, status, checkpoint: currentGate?.step_key || 'task_review', publicationJobsCreated });
       } catch (error) {
         await client.query('ROLLBACK').catch(() => {});
         throw error;
