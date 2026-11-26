@@ -83,12 +83,14 @@ Setelah final approval, sistem membuat publication jobs untuk empat platform. **
 | Area | Status | Notes |
 |---|---|---|
 | PR #1 — Director sessions + video pipeline | Merged to `main` | Merge commit `efb2feb197fff77f3006c1cf91be921c289b1df7` |
-| Approval gates + publication queue | Integrated into `main` | Present in main commit `bf3b65f0af07a6a61be153e35e3c63fe9d05c725`; source PR #2 remains open as historical/conflicted PR |
-| PR #3 — social OAuth foundation | Open, not merged | Source branch `feat/social-account-foundation`, head `9d3c0e2`; CI passed on source head; must be reconstructed on current `main` |
+| PR #2 — approval gates + publication queue | Closed / superseded | Changes integrated into `main`; original PR retained as historical record |
+| PR #3 — social OAuth foundation | Closed / superseded | OAuth foundation reconstructed and merged through PR #6 |
+| PR #6 — social account connection foundation | Merged to `main` | OAuth foundation, encrypted token storage, state/session-bound callback flow and account listing |
+| PR #7 — Command Center approval actions | Merged to `main` | Fixes regular task review API handling and adds UI processing/feedback; merge commit `c07177d4d92447495f26d4a8dcccea661046ffdf` |
 | VPS deployment | Not performed for the latest main changes | Production remains on the previously deployed revision until a deploy is executed and verified on the VPS |
 | README | Updated on `main` | Two-section app/developer handover includes OAuth foundation and current integration status |
 
-Do not assume PR #2 or PR #3 is deployed. Do not mark social accounts connected or posts published without live provider verification.
+Do not assume the latest `main` commit is deployed. Do not mark social accounts connected or posts published without live provider verification.
 
 ## Architecture
 
@@ -132,11 +134,11 @@ The browser must never receive server secrets. API and worker use the protected 
 | `server/employees.mjs` | Employee seed data, role definitions and system prompts |
 | `server/schema.sql` | PostgreSQL schema and additive migrations |
 | `server/video.mjs` | AI-assisted video generation and FFmpeg rendering |
-| `server/social-oauth.mjs` | Social OAuth URL, callback exchange and token encryption (PR #3) |
+| `server/social-oauth.mjs` | Social OAuth URL, callback exchange and token encryption (PR #6) |
 | `server/README.md` | API, worker, environment and operational notes |
 | `scripts/test.mjs` | Existing application tests |
 | `scripts/test-workflow.mjs` | Workflow routing and approval-gate tests |
-| `scripts/test-social-oauth.mjs` | Social OAuth security tests (PR #3) |
+| `scripts/test-social-oauth.mjs` | Social OAuth security tests (PR #6) |
 | `.github/workflows/ci.yml` | GitHub Actions validation pipeline |
 
 ## Runtime and infrastructure
@@ -204,8 +206,8 @@ Core tables:
 - `director_sessions`
 - `workflow_steps`
 - `publication_jobs`
-- `social_accounts` (PR #3)
-- `social_oauth_states` (PR #3)
+- `social_accounts` (PR #6)
+- `social_oauth_states` (PR #6)
 
 Schema is applied by the API startup path. Review schema changes for backward compatibility and safe additive migrations. Back up PostgreSQL before production migration or deployment.
 
@@ -213,7 +215,7 @@ Schema is applied by the API startup path. Review schema changes for backward co
 
 Template: `server/.env.example`. Production file: `/etc/ls-office/api.env`.
 
-Social OAuth configuration (PR #3) uses server-only variables:
+Social OAuth configuration (PR #6) uses server-only variables:
 
 - Meta: `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`
 - TikTok: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REDIRECT_URI`
