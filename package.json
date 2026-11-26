@@ -10,7 +10,8 @@
     "test": "node scripts/test.mjs",
     "rekam": "node scripts/rekam.mjs",
     "api": "node server/index.mjs",
-    "worker": "node server/worker.mjs"
+    "worker": "node server/worker.mjs",
+    "test:workflow": "node scripts/test-workflow.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",
