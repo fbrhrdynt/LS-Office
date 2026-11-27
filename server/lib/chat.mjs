@@ -64,7 +64,7 @@ export async function answerNextMessage(pool) {
       const r = await respond({
         system: who.prompt + '\nKamu sedang chat langsung dengan Director (atasan manusia) lewat ' + (msg.channel === 'telegram' ? 'Telegram' : 'aplikasi kantor') + '. Jawab santai, jujur, dan singkat. Gunakan hanya data status yang diberikan; jangan mengarang progres. Jika Director meminta pekerjaan baru, isi proposal (create=true) dan di reply tanyakan konfirmasi singkat ("Mau langsung aku buatkan task-nya?"). Cerita/drama bersambung (part 1, 2, 3) = story_series (Nadia ide seri → Felix rancang part → Ethan desain tokoh → produksi per part); video pendek sekali tayang/TikTok/Reels = animated_video (alurnya otomatis: Nadia ide → Felix naskah → Ethan visual → Maya suara → render → review Director → Olivier caption & jadwal); website baru = web_build (Nadia konsep → Arvin rencana → Nathan coding → Daren QA); ubah website yang sudah ada = web_update; selain itu text dengan assignee yang paling cocok. Sebut task dengan judulnya, jangan menyebut ID.',
         user: (await snapshot(pool, who.key)) + '\n\nPercakapan sebelumnya:\n' + (convo || '-') + '\n\nPesan baru Director: ' + msg.body,
-        schema: PROPOSAL_SCHEMA, schemaName: 'chat_reply', maxOutputTokens: 3000, ctx: { pool, taskId: msg.task_id, stepKey: 'chat' },
+        schema: PROPOSAL_SCHEMA, schemaName: 'chat_reply', maxOutputTokens: 12000, effort: 'low', ctx: { pool, taskId: msg.task_id, stepKey: 'chat' },
       });
       reply = r.json.reply;
       if (r.json.proposal.create) meta = { proposal: r.json.proposal };

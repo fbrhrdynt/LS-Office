@@ -266,7 +266,9 @@ const server = http.createServer(async (req, res) => {
     if (chat && (chat[1] === GROUP || PERSONNEL.some((p) => p.key === chat[1]))) {
       if (method === 'GET') {
         const q = await pool.query('SELECT id,sender,body,channel,status,meta,created_at FROM messages WHERE thread=$1 AND created_at <= now() ORDER BY created_at DESC, id DESC LIMIT 80', [chat[1]]);
-        return json(res, 200, { messages: q.rows.reverse() });
+        // A conversation unfolds over minutes: whoever speaks next within ~40 s is "typing".
+        const next = await pool.query("SELECT sender FROM messages WHERE thread=$1 AND created_at > now() AND created_at <= now() + interval '40 seconds' AND sender<>'director' ORDER BY created_at LIMIT 1", [chat[1]]);
+        return json(res, 200, { messages: q.rows.reverse(), typing: next.rows[0]?.sender ?? null });
       }
       if (method === 'POST') {
         const b = await body(req);

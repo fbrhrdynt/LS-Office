@@ -81,7 +81,7 @@ export default function CommandCenter({ open, onClose, focus, onAuth, onUnread }
             <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setTab(k); if (k !== 'work') setTaskId(null); }}>{label}{n ? <i>{n}</i> : null}</button>
           ))}
         </nav>
-        <div className="lc-body">
+        <div className={'lc-body' + (tab === 'chat' ? ' is-chat' : '')}>
           {error && <p className="lc-error">{error} <button className="sm" onClick={() => setError('')}>✕</button></p>}
 
           {tab === 'inbox' && <>

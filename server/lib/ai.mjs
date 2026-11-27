@@ -34,14 +34,14 @@ function responseText(data) {
  * One call to the Responses API. `schema` = JSON schema for structured output (strict). `webSearch` enables the hosted tool.
  * Returns { text, json, inputTokens, outputTokens, costUsd }.
  */
-export async function respond({ system, user, schema = null, schemaName = 'result', webSearch = false, maxOutputTokens = config.maxOutputTokens, model = config.textModel, ctx = null, timeoutMs = 180000 }) {
+export async function respond({ system, user, schema = null, schemaName = 'result', webSearch = false, maxOutputTokens = config.maxOutputTokens, model = config.textModel, ctx = null, timeoutMs = 180000, effort = config.reasoningEffort }) {
   const started = Date.now();
   const payload = {
     model,
     max_output_tokens: maxOutputTokens,
     input: [{ role: 'system', content: system }, { role: 'user', content: user }],
   };
-  if (/^(gpt-5|o\d)/.test(model)) payload.reasoning = { effort: config.reasoningEffort };
+  if (/^(gpt-5|o\d)/.test(model)) payload.reasoning = { effort };
   if (webSearch) payload.tools = [{ type: 'web_search' }];
   if (schema) payload.text = { format: { type: 'json_schema', name: schemaName, schema, strict: true } };
   const data = await postJson('/responses', payload, timeoutMs);

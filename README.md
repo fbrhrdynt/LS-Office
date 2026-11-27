@@ -19,7 +19,7 @@ Buka https://office.febro.id → **⌘ Command Center** → login. Atau lewat **
 |---|---|
 | **Keputusan** | semua yang menunggu kamu: pilih ide, review video, setujui caption & jadwal, setujui rencana web, review preview |
 | **Pekerjaan** | `+ Perintah baru` (Video pendek / Website baru / Update website / Tugas teks), daftar task + progres + biaya |
-| **Chat** | **👥 Grup Kantor** (semua karyawan ngobrol, diskusi & debat; kamu bisa ikut/menyuruh) + chat pribadi dengan Alex atau karyawan mana pun; minta pekerjaan → jawab "ya" → jadi task |
+| **Chat** | tampilan seperti WhatsApp: **👥 Grup Kantor** (semua karyawan ngobrol, diskusi & debat; kamu bisa ikut/menyuruh) + chat pribadi dengan Alex atau karyawan mana pun; minta pekerjaan → jawab "ya" → jadi task |
 | **Studio** | seri cerita (progres per part, jeda/lanjut, produksi part berikutnya), akun sosial, jadwal posting, proyek web |
 | **Pengaturan** | hubungkan Telegram, biaya AI harian (estimasi) |
 
@@ -147,6 +147,7 @@ Aturan kerja: kembangkan di branch/worktree terpisah dan database dev (salinan d
 
 | Tanggal | Perubahan |
 |---|---|
+| 2026-11-27 | Chat bergaya WhatsApp/Telegram: daftar chat (Grup Kantor di atas, pesan terakhir, jam, tanda belum dibaca), percakapan dengan header status (online / di mess / sedang tidur / sedang sholat / *sedang mengetik…*), gelembung berekor, nama pengirim berwarna di grup, pemisah tanggal, centang ✓/✓✓ (biru = sudah dibalas), Enter untuk kirim. Perbaikan: balasan grup sempat gagal karena batas token model; sekarang token lebih longgar + dicoba ulang sekali, kalau tetap gagal Alex memberi tahu di grup. |
 | 2026-11-27 | Kantor seperti kehidupan nyata: **Grup Kantor** (karyawan saling komentar hasil kerja, kasih ide, menyanggah, berdebat, ngobrol santai; Director bisa baca & menyuruh lewat web dan Telegram `/grup`), karyawan berkumpul + balon kata di 3D saat ngobrol; **Mess karyawan** dengan 9 kamar tidur + ruang santai; jadwal 24 jam (bangun, Subuh, sarapan, kerja, pulang, makan malam, Isya, tidur), akhir pekan di mess. Migrasi `005_office_social`. |
 | 2026-11-27 | Kantor jadi kampus 3×3 (9 ruangan dengan pintu & koridor, bukan memanjang) + kamera baru: pan, pinch/scroll zoom ke titik, putar, fokus & ikuti karyawan, lompat ruangan, tur opsional. Gaya `gedung30` menampilkan kampus diperkecil (sebagian tertutup lantai gedung). |
 | 2026-11-27 | Kantor 3D realistis: sayap musholla + pantry & kopi dan ruang rapat + lounge, pintu masuk; jadwal harian per karyawan (datang, rapat pagi, ngopi, makan siang, sholat sesuai jadwal sholat Jakarta, istirahat, pulang) dengan jalan bertujuan lewat koridor dan pose sholat/makan/rapat/santai; label ruangan; jadwal sholat berikutnya di HUD. Status kerja asli tetap prioritas. |

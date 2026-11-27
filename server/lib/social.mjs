@@ -119,12 +119,16 @@ async function answerDirector(pool) {
     const r = await respond({
       system: RULES + '\nDirector (atasan manusia) baru saja menulis di grup. Pilih 1-3 orang yang paling relevan untuk menjawab (yang disebut namanya wajib menjawab; Alex menjawab kalau pertanyaannya umum soal kantor). Jawaban harus menanggapi Director langsung, boleh saling melengkapi atau berbeda pendapat. Kalau Director meminta pekerjaan baru, Alex menawarkan membuatkan task (isi proposal create=true dan Alex bertanya "Mau langsung saya buatkan task-nya?"); selain itu proposal.create=false. Yang sedang tidur tidak menjawab; kalau Director menyebut orang yang sedang tidur, salah satu yang bangun bilang orangnya sudah tidur dan biasanya baru balas pagi.',
       user: (await context(pool)) + '\nYang sedang tidak tidur: ' + present.join(', ') + '\nYang sedang tidur: ' + (STAFF.filter((p) => !present.includes(p.key)).map((p) => p.name).join(', ') || '-') + '\nKarakter:\n' + cast(['alex', ...present]) + '\n\nPesan Director: ' + msg.body,
-      schema: CONVO_SCHEMA, schemaName: 'group_reply', maxOutputTokens: 4000, ctx: { pool, stepKey: 'grup' },
+      schema: CONVO_SCHEMA, schemaName: 'group_reply', maxOutputTokens: 12000, effort: 'low', ctx: { pool, stepKey: 'grup' },
     });
     const msgs = r.json.messages.filter((m) => m.speaker === 'alex' || present.includes(m.speaker));
     await saveConversation(pool, { kind: 'director', topic: r.json.topic || 'Pesan Director', place: 'meja', messages: msgs, startAt: Date.now() + 5000, proposal: r.json.proposal });
   } catch (e) {
     console.error('group reply failed', e.message);
+    // Try once more on the next tick; after that say so in the group instead of leaving the Director unanswered.
+    const tries = (msg.meta?.tries ?? 0) + 1;
+    if (tries < 2) await pool.query("UPDATE messages SET status='pending', meta=coalesce(meta,'{}'::jsonb)||$2::jsonb WHERE id=$1", [msg.id, JSON.stringify({ tries })]);
+    else await saveConversation(pool, { kind: 'director', topic: 'Gangguan', place: 'meja', messages: [{ speaker: 'alex', kind: 'info', text: 'Maaf, sistem obrolan lagi gangguan jadi pesanmu belum bisa dijawab tim. Coba kirim ulang sebentar lagi ya.' }] });
   }
   return true;
 }
@@ -143,7 +147,7 @@ async function workConversation(pool, item) {
   const r = await respond({
     system: RULES + '\nIni diskusi kerja tentang kejadian nyata di bawah. Orang yang mengerjakan menjelaskan singkat, rekan lain memberi komentar, ide perbaikan, atau sanggahan (minimal satu sanggahan/pertanyaan kritis), lalu ditutup kesepakatan atau catatan untuk Director. 4-7 pesan.',
     user: (await context(pool)) + '\n\nKEJADIAN: ' + JSON.stringify(item.payload) + '\nPeserta:\n' + cast(team),
-    schema: CONVO_SCHEMA, schemaName: 'work_talk', maxOutputTokens: 4000, ctx: { pool, taskId: item.task_id, stepKey: 'grup' },
+    schema: CONVO_SCHEMA, schemaName: 'work_talk', maxOutputTokens: 12000, effort: 'low', ctx: { pool, taskId: item.task_id, stepKey: 'grup' },
   });
   const place = ['qa_video', 'distribution', 'decision'].includes(item.payload.stepKey) ? 'rapat' : 'ngobrol';
   return saveConversation(pool, { kind: 'kerja', topic: r.json.topic, place, taskId: item.task_id, messages: r.json.messages.filter((m) => team.includes(m.speaker)) });
@@ -159,7 +163,7 @@ async function casualConversation(pool, where, min) {
   const r = await respond({
     system: RULES + '\nIni obrolan santai: ' + moment + '. Campurkan obrolan ringan sehari-hari (makanan, macet, kos, rencana weekend, film) dengan sedikit soal kerjaan atau ide konten baru. Boleh ada beda pendapat ringan dan canda. 3-6 pesan.',
     user: (await context(pool)) + '\nPeserta:\n' + cast(pick),
-    schema: CONVO_SCHEMA, schemaName: 'casual_talk', maxOutputTokens: 3000, ctx: { pool, stepKey: 'grup' },
+    schema: CONVO_SCHEMA, schemaName: 'casual_talk', maxOutputTokens: 12000, effort: 'low', ctx: { pool, stepKey: 'grup' },
   });
   const place = where === 'mess' ? 'mess' : moment.includes('pantry') ? 'makan' : 'ngobrol';
   return saveConversation(pool, { kind: 'santai', topic: r.json.topic, place, messages: r.json.messages.filter((m) => pick.includes(m.speaker)) });
