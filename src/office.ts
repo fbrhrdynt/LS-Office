@@ -17,6 +17,8 @@ export interface DeskState {
   desk: Desk;
   agen: Agen;
   doing: Doing;
+  /** Where the person physically is (schedule + real work state). Default: at the desk. */
+  spot?: Spot;
   bubble: string | null;
   waiting: string[];
   urgent: string[];
@@ -146,4 +148,38 @@ export function fidgetAt(key: string, t: number): { fidget: Fidget; k: number } 
   if (cycle < period - len) return { fidget: 'layar', k: 0 };
   const x = (cycle - (period - len)) / len;
   return { fidget: act, k: Math.sin(Math.PI * x) };
+}
+
+/* ---------- hari kerja yang nyata: datang, rapat, ngopi, sholat, makan, istirahat, pulang ---------- */
+
+export type Spot = 'rumah' | 'meja' | 'kopi' | 'makan' | 'musholla' | 'lounge' | 'rapat';
+export interface Schedule { arrive: string; leave: string; prays: boolean; coffee: string[]; lunch: string; standup: string }
+export interface Planned { spot: Spot; label: string }
+
+const within = (t: number, start: number, minutes: number) => t >= start && t < start + minutes;
+const offsetOf = (key: string, span: number) => { let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) % 997; return h % span; };
+
+/**
+ * Where a person is (by their own schedule) at minute `t` of an ISO weekday `day`. Real work state from the backend
+ * overrides this in App (an employee with a task stays at the desk).
+ */
+export function plannedSpot(key: string, s: Schedule | undefined, t: number, day: number, pt: Record<string, number>): Planned {
+  if (!s) return { spot: 'meja', label: 'siap menerima perintah' };
+  if (day > 5) return { spot: 'rumah', label: 'libur akhir pekan' };
+  const arrive = toMin(s.arrive), leave = toMin(s.leave);
+  if (t < arrive) return { spot: 'rumah', label: 'belum datang (masuk ' + s.arrive.replace(':', '.') + ')' };
+  if (t >= leave) return { spot: 'rumah', label: 'sudah pulang' };
+  if (t < arrive + 6) return { spot: 'meja', label: 'baru datang' };
+  const o = offsetOf(key, 8);
+  if (s.prays) {
+    for (const name of ['Dzuhur', 'Ashar', 'Maghrib'] as const) {
+      const p = pt[name];
+      if (p !== undefined && within(t, p + o, 13)) return { spot: 'musholla', label: 'sholat ' + name };
+    }
+  }
+  if (within(t, toMin(s.standup), 15)) return { spot: 'rapat', label: 'rapat pagi tim' };
+  if (within(t, toMin(s.lunch), 35)) return { spot: 'makan', label: 'makan siang' };
+  for (const c of s.coffee) if (within(t, toMin(c), 10)) return { spot: 'kopi', label: 'ngopi di pantry' };
+  if (within(t, toMin('15:50') + offsetOf(key, 25), 12)) return { spot: 'lounge', label: 'istirahat sebentar di lounge' };
+  return { spot: 'meja', label: 'siap menerima perintah' };
 }

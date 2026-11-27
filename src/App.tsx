@@ -2,7 +2,9 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { flushSync } from 'react-dom';
 import { GAYA, TAMPIL_PEMILIH_GAYA } from './config';
 import { DAFTAR_GAYA, KUNCI_SIMPAN, cariGaya, gayaAwal, type GayaId } from './gaya/daftar';
-import { isNight, lapseAt, params as readParams, runtimeDoing, type DeskState, type RuntimeEntry } from './office';
+import { isNight, isoDay, lapseAt, params as readParams, plannedSpot, runtimeDoing, toMin, type DeskState, type RuntimeEntry, type Schedule } from './office';
+import { prayerTimes, fmtMin } from './prayer';
+import { ROOM_LABELS } from './layout';
 import type { RoomKey } from './config';
 import CommandCenter, { type Focus } from './cc/CommandCenter';
 import PERSONNEL_DATA from '../shared/personnel.json';
@@ -32,6 +34,7 @@ export default function App() {
   const drive = useRef<((t: number) => void) | null>(null);
   const anchors = useRef(new Map<string, HTMLElement>());
   const boardAnchor = useRef<HTMLElement | null>(null);
+  const roomAnchors = useRef(new Map<string, HTMLElement>());
   const [gaya, setGaya] = useState<GayaId>(() => {
     let simpanan: string | null = null;
     try { simpanan = localStorage.getItem(KUNCI_SIMPAN); } catch { /* storage blocked */ }
@@ -73,18 +76,31 @@ export default function App() {
 
   const lapse = p.lapse ? lapseAt(t) : null;
   const time = lapse?.time ?? p.time ?? hm(now);
+  const today = now.toDateString();
+  const pt = useMemo(() => prayerTimes(new Date(today)), [today]);
+  const minute = toMin(time);
+  const day = isoDay(now);
   const desks = useMemo(() => PERSONNEL.map((person): DeskState => {
     const e = office[person.key];
-    const doing = runtimeDoing(e);
+    const plan = plannedSpot(person.key, (person as { schedule?: Schedule }).schedule, minute, day, pt);
+    // Real work always wins: someone with a running task, waiting for you or stuck is at the desk.
+    const busy = e && e.state !== 'available';
+    const doing = busy
+      ? { ...runtimeDoing(e), label: (plan.spot === 'rumah' ? 'lembur: ' : '') + runtimeDoing(e).label }
+      : plan.spot === 'rumah' ? { activity: 'pulang' as const, label: plan.label }
+      : plan.spot === 'meja' ? { ...runtimeDoing(e), label: plan.label === 'siap menerima perintah' ? runtimeDoing(e).label : plan.label }
+      : { activity: 'siaga' as const, label: plan.label };
+    const spot = busy ? 'meja' : plan.spot;
     return {
       doing,
+      spot,
       desk: { key: person.key, room: ROOM[person.room] ?? 'studio', color: person.color, x: person.desk.x, z: person.desk.z },
       agen: { key: person.key, nama: person.name, tugas: person.summary, ruang: ROOM[person.room] ?? 'studio', warna: person.color, x: person.desk.x, z: person.desk.z },
       bubble: e?.title ?? null,
       waiting: e?.state === 'waiting' ? [e.title || 'Menunggu keputusan'] : [],
       urgent: e?.state === 'blocked' ? [e.title || 'Perlu dicek'] : [],
     };
-  }), [office]);
+  }), [office, minute, day, pt]);
   const night = isNight(time);
   const count = (s: string) => PERSONNEL.filter((x) => (office[x.key]?.state ?? 'available') === s).length;
   const waitingList = PERSONNEL.filter((x) => office[x.key]?.state === 'waiting' || office[x.key]?.state === 'blocked');
@@ -99,7 +115,7 @@ export default function App() {
     <main className="ko" data-night={night || !!g.malam || undefined} data-gaya={gaya} style={latar ? { background: latar } : undefined}>
       <div className="ko-stage">
         <Suspense fallback={<div className="ko-loading">Menyiapkan kantor…</div>}>
-          <OfficeScene desks={desks} night={night} boardCount={Math.min(waitingList.length, 8)} anchors={anchors} boardAnchor={boardAnchor} cinematic manual={p.rec} drive={drive} gaya={gaya} />
+          <OfficeScene desks={desks} night={night} boardCount={Math.min(waitingList.length, 8)} anchors={anchors} roomAnchors={roomAnchors} boardAnchor={boardAnchor} cinematic manual={p.rec} drive={drive} gaya={gaya} />
         </Suspense>
         {g.tiltShift && <div className="ko-tilt" aria-hidden="true" />}
         <div className="ko-layer">
@@ -107,6 +123,7 @@ export default function App() {
             <Tag key={d.desk.key} d={d} refFn={(el) => (el ? anchors.current.set(d.desk.key, el) : anchors.current.delete(d.desk.key))} onOpen={() => setOpen(d.desk.key)} />
           ))}
           <span className="ko-board-pin" ref={(el) => void (boardAnchor.current = el)}>Mission Board</span>
+          {ROOM_LABELS.map((r) => <span key={r.key} className="ko-room-pin" ref={(el) => { if (el) roomAnchors.current.set(r.key, el); else roomAnchors.current.delete(r.key); }}>{r.label}</span>)}
         </div>
       </div>
 
@@ -121,23 +138,23 @@ export default function App() {
             <button type="button" className="ko-hud-btn" onClick={() => openCC({ chat: 'alex' })}>💬 Chat</button>
             <button type="button" className="ko-hud-btn primary" onClick={() => (ccOpen ? setCcOpen(false) : openCC(null))}>⌘ Command Center</button>
           </div>
-          <div className="ko-clock"><b>{time.replace(':', '.')}</b><small>{HARI[now.getDay()]}, {now.getDate()} {BULAN[now.getMonth()]} {now.getFullYear()}</small></div>
+          <div className="ko-clock"><b>{time.replace(':', '.')}</b><small>{HARI[now.getDay()]}, {now.getDate()} {BULAN[now.getMonth()]} {now.getFullYear()}</small><small className="ko-prayer">{nextPrayer(pt, minute)}</small></div>
         </div>
       </header>
 
       <section className={`ko-panel ko-panel-agents ${agentsOpen ? '' : 'is-collapsed'}`} aria-label="Personnel">
         <div className="ko-panel-head">
-          <div><span className="ko-eyebrow">TIM</span><h2>Personnel</h2><p>{count('working')} bekerja · {count('waiting')} menunggu kamu · {count('available')} siap</p></div>
+          <div><span className="ko-eyebrow">TIM</span><h2>Personnel</h2><p>{count('working')} bekerja · {count('waiting')} menunggu kamu · {desks.filter((d) => d.spot !== 'rumah').length} di kantor</p></div>
           <button className="ko-icon-btn" type="button" onClick={() => setAgentsOpen((v) => !v)} aria-label={agentsOpen ? 'Ciutkan' : 'Buka'}>{agentsOpen ? '−' : '+'}</button>
         </div>
         {agentsOpen && <div className="ko-person-list">
           {PERSONNEL.map((x) => {
             const e = office[x.key];
-            const d = runtimeDoing(e);
+            const d = desks.find((k) => k.desk.key === x.key)!.doing;
             return <button className="ko-person" type="button" key={x.key} onClick={() => setOpen(x.key)}>
               <span className="ko-avatar" style={{ '--agent': x.color } as React.CSSProperties}>{x.name.slice(0, 1)}</span>
               <span className="ko-person-copy"><b>{x.name}</b><small>{x.role}</small><em>{e?.title ? d.label + ' · ' + e.title : d.label}</em></span>
-              <i className="ko-presence" data-state={e?.state ?? 'available'} />
+              <i className="ko-presence" data-state={desks.find((d) => d.desk.key === x.key)?.spot === 'rumah' && (e?.state ?? 'available') === 'available' ? 'away' : e?.state ?? 'available'} />
             </button>;
           })}
         </div>}
@@ -173,10 +190,15 @@ export default function App() {
   );
 }
 
+function nextPrayer(pt: Record<string, number>, minute: number) {
+  const next = Object.entries(pt).find(([, m]) => m >= minute);
+  return next ? '🕌 ' + next[0] + ' ' + fmtMin(next[1]) : '🕌 Subuh ' + fmtMin(pt.Subuh ?? 0);
+}
+
 function Tag({ d, refFn, onOpen }: { d: DeskState; refFn: (el: HTMLElement | null) => void; onOpen: () => void }) {
   const a = d.doing.activity;
   const think = a === 'kerja' ? '</>' : a === 'menunggu' ? '🙋' : a === 'kendala' ? '!?' : null;
-  return <div className="ko-tag" ref={refFn} data-act={a} style={{ ['--agent' as string]: d.desk.color }}>
+  return <div className="ko-tag" ref={refFn} data-act={a} data-spot={d.spot ?? 'meja'} style={{ ['--agent' as string]: d.desk.color }}>
     <div className="ko-tag-in">
       {think && <span className="ko-think">{think}</span>}
       <div className="ko-tag-row"><button type="button" className="ko-name" onClick={onOpen}><span className="ko-dot" />{d.agen.nama}<span className="ko-name-act">{d.doing.label}</span></button>

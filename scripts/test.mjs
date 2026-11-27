@@ -54,6 +54,24 @@ t('gerak kecil di meja, tidak berjalan-jalan', () => {
   for (let x = 0; x < 120; x += 0.25) { const f = O.fidgetAt('nadia', x); seen.add(f.fidget); assert.ok(f.k >= 0 && f.k <= 1); }
   assert.ok(seen.has('layar') && seen.size >= 3);
 });
+const PT = (await runnerImport(path.join(root, 'src/prayer.ts'), { root, configFile: false, cacheDir: path.join(os.tmpdir(), 'kantor-vite'), logLevel: 'error' })).module;
+t('jadwal sholat Jakarta mendekati jadwal Kemenag', () => {
+  const p = PT.prayerTimes(new Date('2026-11-27T12:00:00'));
+  assert.ok(Math.abs(p.Dzuhur - (11 * 60 + 40)) <= 4 && Math.abs(p.Ashar - (15 * 60 + 5)) <= 4 && Math.abs(p.Maghrib - (17 * 60 + 54)) <= 4);
+});
+t('hari kerja nyata: datang, rapat, sholat, makan, ngopi, pulang', () => {
+  const s = { arrive: '07:52', leave: '16:58', prays: true, coffee: ['09:48'], lunch: '12:05', standup: '09:15' };
+  const pt = { Dzuhur: 700, Ashar: 907, Maghrib: 1075 };
+  const at = (hm, day = 4) => O.plannedSpot('nadia', s, O.toMin(hm), day, pt).spot;
+  assert.equal(at('07:30'), 'rumah');
+  assert.equal(at('09:20'), 'rapat');
+  assert.equal(at('09:50'), 'kopi');
+  assert.equal(O.plannedSpot('nadia', s, 700 + 8, 4, pt).spot, 'musholla');
+  assert.equal(at('12:20'), 'makan');
+  assert.equal(at('17:30'), 'rumah');
+  assert.equal(at('10:00', 6), 'rumah');
+  assert.equal(O.plannedSpot('felix', { ...s, prays: false }, 700 + 8, 4, pt).spot, 'meja');
+});
 const G = (await runnerImport(path.join(root, 'src/gaya/daftar.ts'), { root, configFile: false, cacheDir: path.join(os.tmpdir(), 'kantor-vite'), logLevel: 'error' })).module;
 t('16 gaya + asli, urutan pilihan gaya', () => {
   assert.equal(G.DAFTAR_GAYA.length, 17);
