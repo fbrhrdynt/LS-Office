@@ -188,7 +188,31 @@ const WEB_PLAN_SCHEMA = {
   },
 };
 
-export const SCHEMAS = { IDEA_SCHEMA, SERIES_IDEA_SCHEMA, SERIES_PLAN_SCHEMA, CHARACTER_SCHEMA, SCRIPT_SCHEMA, STORYBOARD_SCHEMA, AUDIO_SCHEMA, DISTRIBUTION_SCHEMA, WEB_PLAN_SCHEMA };
+const SCRIPT_CHECK_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['lolos', 'skor', 'masalah', 'catatan'],
+  properties: {
+    lolos: { type: 'boolean', description: 'false only when at least one finding must be fixed before production' },
+    skor: { type: 'integer', description: '1-10 overall readiness for production' },
+    masalah: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false, required: ['adegan', 'jenis', 'wajib', 'masalah', 'saran'],
+        properties: {
+          adegan: { type: 'integer', description: 'Scene number (1-based), 0 for the whole script' },
+          jenis: { type: 'string', enum: ['hook', 'fokus', 'klaim', 'pengulangan', 'gaya', 'penutup', 'ucapan', 'konsistensi', 'durasi'] },
+          wajib: { type: 'boolean', description: 'true = must be fixed before production; false = suggestion' },
+          masalah: { type: 'string' },
+          saran: { type: 'string' },
+        },
+      },
+    },
+    catatan: { type: 'string', description: 'One or two sentences for the Director' },
+  },
+};
+
+export const SCRIPT_CHECK_SCORE_MIN = 6;
+
+export const SCHEMAS = { SCRIPT_CHECK_SCHEMA, IDEA_SCHEMA, SERIES_IDEA_SCHEMA, SERIES_PLAN_SCHEMA, CHARACTER_SCHEMA, SCRIPT_SCHEMA, STORYBOARD_SCHEMA, AUDIO_SCHEMA, DISTRIBUTION_SCHEMA, WEB_PLAN_SCHEMA };
 
 const ideas = (kind) => ({
   key: 'ideas', employeeId: 'nadia', executor: 'agent', gate: 'choose_idea', schema: 'IDEA_SCHEMA', webSearch: true,
@@ -198,11 +222,27 @@ const ideas = (kind) => ({
     : 'Riset dan usulkan 3-5 konsep website sesuai brief: target pengguna, masalah yang diselesaikan, fitur inti, referensi nyata, dan alasan. Isi field format dengan "explainer" untuk website konten/landing dan "cards" untuk aplikasi/dashboard. Jangan menulis kode.',
 });
 
+ /** Daren checks Felix's script before anything expensive (images, voice, render) is produced. */
+const SCRIPT_CHECK = {
+  key: 'script_check', employeeId: 'daren', executor: 'agent', schema: 'SCRIPT_CHECK_SCHEMA', gate: 'approve_script', revisable: ['script'], title: 'Cek naskah',
+  instruction: 'Periksa naskah Felix SEBELUM produksi (gambar, suara, render itu mahal). Nilai dengan daftar ini dan laporkan temuan per adegan:\n' +
+    '1. hook: kalimat pertama langsung menyentuh masalah/konflik dan bikin orang berhenti scroll (bukan basa-basi, maks ±10 kata).\n' +
+    '2. fokus: satu pesan atau satu alur utama, tidak melebar ke banyak topik.\n' +
+    '3. klaim: angka, fakta, atau janji (penghasilan, kesehatan, hasil pasti) yang tidak ada di riset/brief. Untuk cerita fiksi, detail cerita (nominal, jam, isi chat) BUKAN klaim.\n' +
+    '4. pengulangan: kalimat atau gagasan yang diulang tanpa alasan.\n' +
+    '5. gaya: sesuai PROFIL AKUN (gaya bahasa, penonton, hal yang dilarang) dan terdengar manusiawi, bukan kaku/AI.\n' +
+    '6. penutup: video pendek ditutup ajakan singkat; part cerita ditutup cliffhanger sesuai rencana part (part terakhir: penyelesaian).\n' +
+    '7. ucapan: enak dibacakan (kalimat pendek, tanpa istilah kamera/label/tanda kurung di narasi).\n' +
+    '8. konsistensi: (cerita) sesuai rancangan seri, tokoh, dan kejadian part sebelumnya.\n' +
+    'Tandai wajib=true hanya untuk masalah yang benar-benar harus diperbaiki; hal kecil tulis sebagai saran (wajib=false). lolos=false bila ada temuan wajib. Jangan menulis ulang naskahnya.',
+};
+
 const MAYA = 'Kamu yang membuat video terasa hidup lewat suara. (1) Pilih suara narator yang cocok. (2) Untuk SETIAP adegan storyboard, tulis delivery_tags: tag emosi ElevenLabs v3 dalam kurung siku sebelum narasi adegan itu, sesuai emosi kalimatnya, misalnya [whispers], [softly], [sad], [sighs], [nervous], [scared], [crying], [excited], [curious], [serious], [pause], [laughs]. Gunakan 1-2 tag, kosongkan untuk adegan netral. (3) Sound design: music_prompt = musik instrumental latar seluruh video (bahasa Inggris: mood, instrumen, tempo; untuk horor: dark ambient drone, low strings, sparse piano; untuk drama keluarga: soft piano, warm strings; untuk pertemanan: light acoustic guitar), ambience = suara latar adegan (hujan, jangkrik malam, pasar ramai, angin, kipas angin kamar kos), sfx = satu efek suara pendek yang menguatkan momen (pintu berderit, langkah kaki, notifikasi HP, petir, piring jatuh). Jangan berlebihan: efek hanya pada momen penting, sisanya kosong. (4) Daftarkan pengucapan angka/singkatan (written -> spoken).';
 
 export const VIDEO_WORKFLOW = [
   ideas('video'),
   { key: 'script', employeeId: 'felix', executor: 'agent', schema: 'SCRIPT_SCHEMA', title: 'Naskah', instruction: 'Tulis naskah voice-over berbahasa Indonesia yang natural dan cepat untuk ide terpilih: panjang dan jumlah adegan sesuai TARGET DURASI di konteks. Field spoken HANYA berisi kata yang diucapkan narator: tanpa label (Visual/Catatan/Hook/CTA), tanpa arahan kamera, tanpa tanda kurung, tanpa timestamp. Arahan visual tulis di visual_note. Kalimat pendek, hook kuat di adegan 1 (sama dengan hook_line), penjelasan runtut, insight/twist, penutup + CTA singkat (follow, atau cek link di bio bila ada affiliate). Hanya pakai fakta dari riset Nadia. Tulis angka dan istilah apa adanya (Maya yang mengatur pengucapan).' },
+  SCRIPT_CHECK,
   { key: 'storyboard', employeeId: 'ethan', executor: 'agent', schema: 'STORYBOARD_SCHEMA', title: 'Storyboard & visual', instruction: 'Ubah naskah Felix menjadi storyboard produksi. Field narration = SALIN PERSIS field spoken dari naskah Felix (boleh dipecah/digabung per adegan, jangan menambah, mengurangi, atau mengubah kata). visual_note Felix dipakai untuk image_prompt dan label, BUKAN narasi. hook_text = hook_line Felix (maks 10 kata). Template mengikuti format ide terpilih. Untuk "explainer": tiap adegan punya image_prompt sinematik (gaya render 3D stylized, karakter konsisten sesuai character_bible, komposisi vertikal, tanpa teks) dan 0-2 label penunjuk (x,y 0-1) berbahasa Indonesia, maksimal 3 kata, di luar area tengah-bawah layar (y < 0.5 atau y > 0.75) karena area itu untuk caption. Untuk "cards": gunakan card (list/stat/compare/steps/quote) di hampir semua adegan; image_prompt boleh kosong. jumlah adegan sesuai TARGET DURASI di konteks, maksimal 3 label per adegan, maksimal 6 item per card.' },
   { key: 'audio_direction', employeeId: 'maya', executor: 'agent', schema: 'AUDIO_SCHEMA', title: 'Arahan suara & sound design', instruction: MAYA },
   { key: 'render_video', employeeId: null, executor: 'render', title: 'Produksi video', instruction: 'Buat gambar adegan, voice-over, caption per kata, dan render MP4 vertikal dengan Remotion.' },
@@ -234,6 +274,7 @@ export const STORY_SERIES_WORKFLOW = [
 const episode = (key, extra) => ({ ...VIDEO_WORKFLOW.find((s) => s.key === key), ...extra });
 export const STORY_EPISODE_WORKFLOW = [
   episode('script', { instruction: 'Tulis naskah narasi part ini dalam bahasa Indonesia sehari-hari yang REALISTIS, seperti seseorang menceritakan kisah nyata orang yang ia kenal kepada temannya: lugas, detail konkret (nominal, jam, isi chat, tempat), emosi lewat kejadian bukan kata sifat berlebihan. JANGAN bernada dongeng (hindari "Alkisah", "Pada suatu hari", "di sebuah desa", kalimat puitis berlebihan). Sudut pandang orang ketiga menyebut nama tokoh, kalimat pendek: panjang dan jumlah adegan sesuai TARGET DURASI di konteks. Part 2 dan seterusnya dibuka dengan satu kalimat pengingat singkat kejadian part sebelumnya. Ikuti ringkasan part ini dari rancangan seri dan jaga konsistensi dengan part sebelumnya. Tutup dengan cliffhanger part ini (kecuali part terakhir: penyelesaian). Field spoken HANYA kalimat narator (boleh menyebut isi chat/notifikasi secara singkat), tanpa label/arahan/tanda kurung dan tanpa istilah kamera (close up, shot, frame, menunjukkan tekstur, dll.); semua arahan visual di visual_note, termasuk kapan layar HP (chat/saldo) ditampilkan. hook_line = kalimat pertama.' }),
+  SCRIPT_CHECK,
   episode('storyboard', { instruction: 'Ubah naskah Felix menjadi storyboard part ini dengan template "story". Field narration = SALIN PERSIS field spoken Felix (boleh dipecah/digabung, jangan menambah/mengubah kata). jumlah adegan sesuai TARGET DURASI di konteks. image_prompt bahasa Inggris: sebut nama tokoh dan aksi/ekspresi/lokasi; penampilan tokoh mengikuti desain tokoh seri (akan dipasangkan dengan character sheet). Untuk momen layar HP gunakan card kind "chat" (items "Nama: pesan") atau "phone" (heading judul aplikasi/notifikasi, value angka besar seperti saldo, items baris info) dan image_prompt boleh kosong. labels selalu kosong. hook_text kosong.' }),
   episode('audio_direction', { instruction: MAYA + ' Ini part cerita bersambung: narasi hangat dan emosional seperti orang yang menceritakan kisah nyata, jaga suara dan nuansa musik konsisten dengan part sebelumnya, dan beri tag + efek yang menegangkan pada cliffhanger di adegan terakhir.' }),
   VIDEO_WORKFLOW.find((s) => s.key === 'render_video'),
@@ -259,6 +300,7 @@ export const GATE_LABEL = {
   video_review: 'Review video',
   publish: 'Setujui caption & jadwal posting',
   approve_plan: 'Setujui rencana teknis',
+  approve_script: 'Setujui naskah',
   approve_series: 'Setujui rancangan seri',
   web_review: 'Review preview website',
   task_review: 'Review hasil',

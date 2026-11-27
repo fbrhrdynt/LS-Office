@@ -135,7 +135,7 @@ async function answerDirector(pool) {
 
 /** Who talks about a work event: the person who did it, plus teammates downstream / their lead. */
 const TEAMS = {
-  ideas: ['nadia', 'felix', 'ethan', 'olivier'], script: ['felix', 'ethan', 'maya', 'nadia'], storyboard: ['ethan', 'felix', 'maya'],
+  ideas: ['nadia', 'felix', 'ethan', 'olivier'], script: ['felix', 'ethan', 'maya', 'nadia'], script_check: ['daren', 'felix', 'nadia'], storyboard: ['ethan', 'felix', 'maya'],
   audio_direction: ['maya', 'ethan', 'felix'], qa_video: ['daren', 'ethan', 'olivier', 'adrian'], distribution: ['olivier', 'adrian', 'ethan'],
   series_plan: ['felix', 'nadia', 'ethan'], character_design: ['ethan', 'maya', 'felix'], plan: ['arvin', 'nathan', 'daren'],
   implement: ['nathan', 'arvin', 'daren'], qa_web: ['daren', 'nathan', 'arvin'], decision: ['alex', 'ethan', 'olivier', 'arvin'],

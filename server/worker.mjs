@@ -7,8 +7,8 @@ import { workContext } from './lib/engine.mjs';
 import { answerNextMessage } from './lib/chat.mjs';
 import { socialTick } from './lib/social.mjs';
 import { config } from './lib/config.mjs';
-import { SCHEMAS, stepDef, durationTarget } from './workflows.mjs';
-import { formatOutput } from './lib/format.mjs';
+import { SCHEMAS, SCRIPT_CHECK_SCORE_MIN, stepDef, durationTarget } from './workflows.mjs';
+import { formatOutput, scriptCheckReport } from './lib/format.mjs';
 import { hasCues } from './video/produce.mjs';
 
 const exec = promisify(execFile);
@@ -25,6 +25,7 @@ async function agentStep(job, { pool }) {
     await pool.query('UPDATE task_runs SET input_tokens=$2,output_tokens=$3 WHERE id=$1', [job.runId, r.inputTokens, r.outputTokens]);
     return { text: r.text };
   }
+  if (job.step_key === 'script_check') return scriptCheck(job, ctx, context, pool);
   const def = stepDef(job.task_type, job.step_key);
   if (!job.system_prompt) throw new Error('Employee prompt not found for step ' + job.step_key);
   let schema = def?.schema ? SCHEMAS[def.schema] : null;
@@ -56,14 +57,57 @@ async function agentStep(job, { pool }) {
   });
   let r = await ask();
   let problem = r.json ? await validate(pool, job, r.json) : null;
-  if (problem) {
-    // One self-correction round: the agent sees exactly what was wrong.
+  // Up to two self-correction rounds: the agent sees exactly what was wrong.
+  for (let round = 0; problem && round < 2; round++) {
     r = await ask('\n\n### HASILMU SEBELUMNYA DITOLAK QA, PERBAIKI:\n' + problem + '\n\nHasil sebelumnya:\n' + JSON.stringify(r.json).slice(0, 8000));
     problem = await validate(pool, job, r.json);
-    if (problem) throw new Error('Output ' + job.step_title + ' tidak lolos validasi: ' + problem);
   }
+  if (problem) throw new Error('Output ' + job.step_title + ' tidak lolos validasi: ' + problem);
   await pool.query('UPDATE task_runs SET input_tokens=input_tokens+$2,output_tokens=output_tokens+$3 WHERE id=$1', [job.runId, r.inputTokens, r.outputTokens]);
   return { text: r.json ? formatOutput(job.step_key, r.json) : r.text, json: r.json };
+}
+
+/**
+ * Daren checks Felix's script before production. When something must be fixed, Felix revises once on his own
+ * (with Daren's findings) and Daren checks again; the Director then sees the result and the script at the gate.
+ */
+async function scriptCheck(job, ctx, context, pool) {
+  const def = stepDef(job.task_type, 'script_check');
+  const scriptDef = stepDef(job.task_type, 'script');
+  let usage = { i: 0, o: 0 };
+  const check = async (extraContext = '') => {
+    const r = await respond({
+      system: job.system_prompt + RULES, user: 'INSTRUKSI TAHAPMU (' + def.title + '):\n' + def.instruction + '\n\n' + context + extraContext,
+      schema: SCHEMAS.SCRIPT_CHECK_SCHEMA, schemaName: 'script_check', ctx, maxOutputTokens: 12000, effort: 'low',
+    });
+    usage = { i: usage.i + r.inputTokens, o: usage.o + r.outputTokens };
+    const j = r.json;
+    j.lolos = j.lolos && !j.masalah.some((m) => m.wajib) && j.skor >= SCRIPT_CHECK_SCORE_MIN;
+    return j;
+  };
+  let result = await check();
+  let revised = null;
+  if (!result.lolos) {
+    const felix = (await pool.query("SELECT system_prompt FROM employees WHERE id='felix'")).rows[0]?.system_prompt || '';
+    const old = (await pool.query("SELECT output_json FROM workflow_steps WHERE task_id=$1 AND step_key='script'", [job.id])).rows[0]?.output_json;
+    const findings = result.masalah.map((m) => '- ' + (m.adegan ? 'Adegan ' + m.adegan : 'Umum') + ' [' + m.jenis + (m.wajib ? ', WAJIB' : '') + ']: ' + m.masalah + ' → ' + m.saran).join('\n');
+    const r = await respond({
+      system: felix + RULES, schema: SCHEMAS.SCRIPT_SCHEMA, schemaName: 'script', ctx: { ...ctx, stepKey: 'script' }, maxOutputTokens: 12000, timeoutMs: 300000,
+      user: 'INSTRUKSI TAHAPMU (Naskah):\n' + scriptDef.instruction + '\n\n' + context + '\n\n### NASKAHMU DIPERIKSA DAREN DAN PERLU DIPERBAIKI\n' + findings +
+        '\n\nPerbaiki semua temuan WAJIB (saran boleh dipakai bila membuat naskah lebih baik). Pertahankan bagian yang sudah bagus. Naskah sebelumnya:\n' + JSON.stringify(old).slice(0, 9000),
+    });
+    usage = { i: usage.i + r.inputTokens, o: usage.o + r.outputTokens };
+    const problem = await validate(pool, { ...job, step_key: 'script' }, r.json);
+    if (!problem) {
+      await pool.query("UPDATE workflow_steps SET output_json=$2,output_text=$3 WHERE task_id=$1 AND step_key='script'", [job.id, JSON.stringify(r.json), formatOutput('script', r.json)]);
+      revised = { findings: result.masalah.filter((m) => m.wajib).length };
+      result = await check('\n\n### CATATAN: naskah di atas sudah DIREVISI Felix. Ini naskah terbaru yang harus diperiksa:\n' + JSON.stringify(r.json));
+    } else revised = { failed: problem };
+  }
+  await pool.query('UPDATE task_runs SET input_tokens=input_tokens+$2,output_tokens=output_tokens+$3 WHERE id=$1', [job.runId, usage.i, usage.o]);
+  const script = (await pool.query("SELECT output_json FROM workflow_steps WHERE task_id=$1 AND step_key='script'", [job.id])).rows[0]?.output_json;
+  const json = { ...result, diperbaiki_felix: Boolean(revised && !revised.failed), perbaikan_gagal: revised?.failed || '' };
+  return { text: scriptCheckReport(json, script), json };
 }
 
 const words = (s) => String(s || '').split(/\s+/).filter(Boolean).length;
@@ -80,7 +124,14 @@ async function validate(pool, job, json) {
     if (bad.length) return 'Adegan ' + bad.join(', ') + ' masih berisi arahan/label/tanda kurung di field spoken. Pindahkan ke visual_note.';
     const d = durationTarget(job.task_type, job.meta);
     const [lo, hi] = [Math.round(d.words[0] * 0.9), Math.round(d.words[1] * 1.1)];
-    if (total < lo || total > hi) return 'Total kata yang diucapkan ' + total + '; harus ' + d.words[0] + '-' + d.words[1] + ' supaya durasinya ' + d.label + '.';
+    if (total < lo || total > hi) {
+      // Be concrete: models follow "add ~N words, e.g. in these scenes" far better than a bare range.
+      const target = Math.round((d.words[0] + d.words[1]) / 2);
+      const per = json.scenes.map((x, i) => 'adegan ' + (i + 1) + ': ' + words(x.spoken)).join(', ');
+      return 'Total kata yang diucapkan ' + total + '; harus ' + d.words[0] + '-' + d.words[1] + ' supaya durasinya ' + d.label + '. ' +
+        (total < lo ? 'TAMBAH sekitar ' + (target - total) + ' kata: kembangkan penjelasan/detail di adegan tengah (satu kalimat tambahan per adegan), jangan menambah CTA.' : 'KURANGI sekitar ' + (total - target) + ' kata: padatkan kalimat yang panjang.') +
+        ' Jumlah kata sekarang: ' + per + '.';
+    }
     if (json.scenes.length < Math.max(3, d.scenes[0] - 2)) return 'Adegan terlalu sedikit untuk durasi ' + d.label + '.';
   }
   if (key === 'storyboard') {

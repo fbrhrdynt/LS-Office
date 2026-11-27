@@ -40,3 +40,19 @@ export function formatOutput(key, j) {
   }
   return JSON.stringify(j, null, 2);
 }
+
+/** Daren's script check as the Director reads it at the "Setujui naskah" gate: verdict, findings, then the script. */
+export function scriptCheckReport(c, script) {
+  const head = c.lolos ? '✅ Lolos cek Daren (skor ' + c.skor + '/10)' : '⚠️ Belum lolos cek Daren (skor ' + c.skor + '/10) — perlu keputusanmu';
+  const lines = [head];
+  if (c.diperbaiki_felix) lines.push('🔁 Felix sudah memperbaiki naskah sekali berdasarkan temuan Daren.');
+  if (c.perbaikan_gagal) lines.push('🔁 Felix sudah mencoba memperbaiki, tapi hasilnya tidak lolos validasi (' + c.perbaikan_gagal.split('. ')[0] + '), jadi naskah di bawah masih versi sebelumnya.');
+  if (c.catatan) lines.push(c.catatan);
+  if (c.masalah.length) lines.push('', 'Temuan:', ...c.masalah.map((m) => (m.wajib ? '• [WAJIB] ' : '• ') + (m.adegan ? 'Adegan ' + m.adegan + ' · ' : '') + m.jenis + ': ' + m.masalah + (m.saran ? ' → ' + m.saran : '')));
+  if (script?.scenes) {
+    lines.push('', '— NASKAH: ' + (script.title || '') + ' —');
+    script.scenes.forEach((x, i) => lines.push((i + 1) + '. ' + x.spoken));
+  }
+  return lines.join('\n');
+}
+

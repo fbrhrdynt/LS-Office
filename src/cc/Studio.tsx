@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
-import { api, fmtTime, usd, STATUS_LABEL, type Project, type SocialPlatform } from './api';
+import { api, fmtTime, usd, STATUS_LABEL, type Profile, type Project, type SocialPlatform } from './api';
 
 export function Social() {
   const [platforms, setPlatforms] = useState<SocialPlatform[]>([]);
@@ -116,6 +116,48 @@ export function SeriesList({ onOpen }: { onOpen: (id: string) => void }) {
           </div>
         </div>
       ))}
+    </section>
+  );
+}
+
+const EMPTY_PROFILE = { name: '', handle: '', topic: '', audience: '', tone: '', forbidden: '', notes: '', is_default: false };
+
+/** Account profiles: every idea, script and caption for an account follows its profile. */
+export function Profiles() {
+  const [list, setList] = useState<Profile[]>([]);
+  const [f, setF] = useState<typeof EMPTY_PROFILE & { id?: string }>(EMPTY_PROFILE);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState('');
+  const load = useCallback(async () => { try { setList((await api<{ profiles: Profile[] }>('/profiles')).profiles); } catch (e) { setError((e as Error).message); } }, []);
+  useEffect(() => { void load(); }, [load]);
+  const set = (k: keyof typeof EMPTY_PROFILE) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const save = async (e: FormEvent) => {
+    e.preventDefault(); setError('');
+    try { await api('/profiles' + (f.id ? '/' + f.id : ''), { method: f.id ? 'PUT' : 'POST', json: f }); setOpen(false); setF(EMPTY_PROFILE); await load(); } catch (err) { setError((err as Error).message); }
+  };
+  const remove = async (p: Profile) => { if (confirm('Hapus profil ' + p.name + '?')) { await api('/profiles/' + p.id, { method: 'DELETE' }); await load(); } };
+  return (
+    <section className="lc-section"><h4>Profil akun</h4>
+      <p className="lc-muted">Tiap akun (TikTok/IG/FB) punya profil: topik, penonton, gaya bahasa, dan larangan. Nadia, Felix, Daren, Ethan, Maya, dan Olivier selalu membaca profil ini. Nadia juga tidak akan mengulang ide yang sudah pernah dibuat akun yang sama. Profil ⭐ dipakai kalau kamu tidak memilih.</p>
+      {list.map((p) => (
+        <div key={p.id} className="lc-card">
+          <div className="lc-row between"><b>{p.is_default ? '⭐ ' : ''}{p.name}{p.handle ? ' · @' + p.handle : ''}</b><span className="lc-row"><button className="sm" onClick={() => { setF({ ...p }); setOpen(true); }}>Ubah</button><button className="sm lc-danger" onClick={() => void remove(p)}>Hapus</button></span></div>
+          <p className="lc-muted">{[p.topic, p.audience && 'Penonton: ' + p.audience, p.tone && 'Gaya: ' + p.tone].filter(Boolean).join(' · ')}</p>
+        </div>
+      ))}
+      {!open ? <button onClick={() => { setF(EMPTY_PROFILE); setOpen(true); }}>+ Profil akun baru</button> : (
+        <form className="lc-new" onSubmit={save}>
+          <div className="lc-row"><label className="lc-field">Nama profil<input required maxLength={80} value={f.name} onChange={set('name')} placeholder="mis. Cerita Bersambung" /></label><label className="lc-field">Username akun<input maxLength={80} value={f.handle} onChange={set('handle')} placeholder="@namaakun" /></label></div>
+          <label className="lc-field">Topik<textarea rows={2} maxLength={600} value={f.topic} onChange={set('topic')} placeholder="mis. drama keluarga & pertemanan sehari-hari, horor ringan" /></label>
+          <label className="lc-field">Penonton<textarea rows={2} maxLength={600} value={f.audience} onChange={set('audience')} placeholder="mis. 18–35 tahun, pekerja & mahasiswa, suka cerita relate" /></label>
+          <label className="lc-field">Gaya bahasa<textarea rows={2} maxLength={600} value={f.tone} onChange={set('tone')} placeholder="mis. santai, hangat, pakai aku/kamu, tidak lebay" /></label>
+          <label className="lc-field">Dilarang<textarea rows={2} maxLength={800} value={f.forbidden} onChange={set('forbidden')} placeholder="mis. janji penghasilan, angka tanpa sumber, kata kasar, SARA" /></label>
+          <label className="lc-field">Catatan lain<textarea rows={2} maxLength={1500} value={f.notes} onChange={set('notes')} placeholder="mis. selalu ada twist di akhir, CTA follow untuk part berikutnya" /></label>
+          <label className="lc-check"><input type="checkbox" checked={f.is_default} onChange={(e) => setF((x) => ({ ...x, is_default: e.target.checked }))} /> Jadikan profil utama ⭐</label>
+          <div className="lc-row"><button className="lc-primary">Simpan</button><button type="button" onClick={() => setOpen(false)}>Batal</button></div>
+          {error && <p className="lc-error">{error}</p>}
+        </form>
+      )}
     </section>
   );
 }

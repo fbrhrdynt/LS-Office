@@ -10,6 +10,7 @@ import { createTask, decide, retry, cancel, officeState, createEpisodeTask } fro
 import { buildAuthorizationUrl, completeOAuth, oauthConfiguration } from './social-oauth.mjs';
 import { listElevenVoices, narrationVoices } from './lib/ai.mjs';
 import { activeConversations, GROUP } from './lib/social.mjs';
+import { listProfiles, saveProfile, deleteProfile } from './lib/profiles.mjs';
 import PERSONNEL from '../shared/personnel.json' with { type: 'json' };
 
 const pool = createPool(Number(process.env.DB_POOL_MAX || 6));
@@ -309,6 +310,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* web dev projects */
+    /* account profiles */
+    if (route === '/api/profiles' && method === 'GET') return json(res, 200, { profiles: await listProfiles(pool) });
+    if (route === '/api/profiles' && method === 'POST') return json(res, 201, { profile: await saveProfile(pool, null, await body(req)) });
+    const prof = route.match(/^\/api\/profiles\/(\d+)$/);
+    if (prof && method === 'PUT') return json(res, 200, { profile: await saveProfile(pool, Number(prof[1]), await body(req)) });
+    if (prof && method === 'DELETE') return json(res, (await deleteProfile(pool, Number(prof[1]))) ? 200 : 404, { ok: true });
+
     if (route === '/api/projects' && method === 'GET') {
       const q = await pool.query('SELECT p.*,(SELECT count(*)::int FROM tasks t WHERE t.project_id=p.id) AS tasks FROM dev_projects p ORDER BY p.name');
       return json(res, 200, { projects: q.rows });

@@ -17,10 +17,10 @@ Buka https://office.febro.id → **⌘ Command Center** → login. Atau lewat **
 
 | Tab | Isi |
 |---|---|
-| **Keputusan** | semua yang menunggu kamu: pilih ide, review video, setujui caption & jadwal, setujui rencana web, review preview |
+| **Keputusan** | semua yang menunggu kamu: pilih ide, setujui naskah, review video, setujui caption & jadwal, setujui rencana web, review preview |
 | **Pekerjaan** | `+ Perintah baru` (Video pendek / Website baru / Update website / Tugas teks), daftar task + progres + biaya |
 | **Chat** | tampilan seperti WhatsApp: **👥 Grup Kantor** (semua karyawan ngobrol, diskusi & debat; kamu bisa ikut/menyuruh) + chat pribadi dengan Alex atau karyawan mana pun; minta pekerjaan → jawab "ya" → jadi task |
-| **Studio** | seri cerita (progres per part, jeda/lanjut, produksi part berikutnya), akun sosial, jadwal posting, proyek web |
+| **Studio** | profil akun (topik, penonton, gaya, larangan), seri cerita (progres per part, jeda/lanjut, produksi part berikutnya), akun sosial, jadwal posting, proyek web |
 | **Pengaturan** | hubungkan Telegram, biaya AI harian (estimasi) |
 
 Kantor 3D berbentuk **kampus 3×3 ruangan** (`src/layout.ts`): Creative Studio · Ruang Direksi · Web Dev (belakang),
@@ -53,8 +53,12 @@ Status di meja: ⌨️ mengetik = sedang mengerjakan tahapnya, 🙋 angkat tanga
 
 ### Video pendek
 ```
-Nadia riset + 3-5 ide ──▶ [KAMU pilih ide]
-  ▶ Felix naskah (hanya kalimat yang diucapkan) ▶ Ethan storyboard & visual ▶ Maya arahan suara
+Nadia riset + 3-5 ide (tidak mengulang ide akun yang sama) ──▶ [KAMU pilih ide]
+  ▶ Felix naskah (hanya kalimat yang diucapkan)
+  ▶ Daren cek naskah (hook, fokus, klaim tanpa sumber, pengulangan, gaya sesuai profil, penutup, enak diucapkan);
+    ada temuan wajib → Felix memperbaiki sendiri 1× → Daren cek lagi
+  ──▶ [KAMU setujui naskah] (sebelum biaya produksi keluar; bisa dimatikan per task, naskah yang tidak lolos tetap berhenti)
+  ▶ Ethan storyboard & visual ▶ Maya arahan suara
   ▶ Production engine: gambar adegan (gpt-image-2) + suara per adegan (ElevenLabs, timing per kata ikut;
                        tanpa key ElevenLabs: OpenAI TTS + Whisper) + render Remotion (caption kinetik, label, hook)
   ▶ Daren QA (codec, resolusi, durasi) ──▶ [KAMU review video]
@@ -72,7 +76,7 @@ Nadia riset tema + 3-5 ide seri (arc per part) ──▶ [KAMU pilih]
   ▶ Felix rancangan seri: tokoh + daftar part + cliffhanger tiap part ──▶ [KAMU setujui]
   ▶ Ethan desain tokoh & lokasi ─▶ seri tercipta, Part 1 otomatis masuk produksi
 Setiap part:
-  Felix naskah (ingat part sebelumnya, ditutup cliffhanger) ▶ Ethan storyboard
+  Felix naskah (ingat part sebelumnya, ditutup cliffhanger) ▶ Daren cek naskah ──▶ [KAMU setujui naskah] ▶ Ethan storyboard
   ▶ Maya: suara (DIKUNCI untuk semua part seri) + emosi per adegan ([whispers], [sad], [sighs]…) + sound design
     (musik latar, ambience per adegan, efek suara di momen penting)
   ▶ engine: character sheet seri (dibuat sekali) dipakai sebagai referensi SETIAP gambar → tokoh konsisten
@@ -98,6 +102,12 @@ Kamu tulis di Grup Kantor (web: Chat → 👥 Grup Kantor, Telegram: /grup <pesa
 Tim juga ngobrol sendiri (komentar hasil kerja, ide, debat, obrolan santai); Telegram `/grup on` meneruskan obrolan grup.
 ```
 
+### Profil akun
+Studio → **Profil akun**: tiap akun punya topik, penonton, gaya bahasa, larangan, dan catatan. Saat membuat Video pendek
+/ Cerita bersambung pilih akunnya (default = profil ⭐; part seri ikut profil task awal). Profil masuk ke konteks semua
+tahap kreatif (ide, naskah, cek naskah, visual, suara, caption), dan Nadia diberi daftar ide yang sudah pernah dibuat
+akun itu supaya tidak mengulang.
+
 ### Aturan yang dijaga sistem
 - Tidak ada yang terbit tanpa persetujuanmu; agen tidak mengklaim hasil yang tidak ada.
 - Output AI divalidasi (narasi tanpa catatan produksi, durasi, caption tanpa catatan internal); bila gagal, agen
@@ -117,6 +127,7 @@ Tim juga ngobrol sendiri (komentar hasil kerja, ide, debat, obrolan santai); Tel
 | Suara narator ElevenLabs | ✅ siap, aktif setelah `ELEVENLABS_API_KEY` diisi |
 | Bot Telegram | ✅ berjalan (@lsai_officebot terhubung) |
 | Posting TikTok / IG / FB / YouTube | ⏳ siap, perlu developer app + akun terhubung; belum diuji dengan akun asli |
+| Cek naskah Daren + gate "Setujui naskah" sebelum produksi, profil akun | ✅ berjalan (±$0,01–0,03 per naskah) |
 | Video cerita bersambung (Part 1, 2, 3…) dengan tokoh konsisten | ✅ berjalan (±$1–1.5 per part, render ±5–8 menit) |
 
 ## 4. Developer guide
@@ -147,6 +158,7 @@ Aturan kerja: kembangkan di branch/worktree terpisah dan database dev (salinan d
 
 | Tanggal | Perubahan |
 |---|---|
+| 2026-11-28 | **Cek naskah sebelum produksi**: tahap baru Daren memeriksa naskah Felix dengan daftar cek (hook, fokus, klaim, pengulangan, gaya, penutup, ucapan, konsistensi); temuan wajib → Felix revisi otomatis 1×; lalu gate **Setujui naskah** (web & Telegram) sebelum gambar/suara/render. Bisa dimatikan per task ("Aku cek naskahnya dulu"), tapi naskah yang tidak lolos tetap menunggu. **Profil akun** (Studio): topik, penonton, gaya, larangan per akun ikut ke semua tahap kreatif + daftar ide lama agar tidak berulang. Migrasi `006_profiles_script_check`. Perbaikan: naskah yang panjangnya meleset kini diberi koreksi konkret ("tambah ±N kata") dan 2 putaran perbaikan otomatis (sebelumnya 1, sehingga task bisa gagal setelah revisi). |
 | 2026-11-27 | Chat bergaya WhatsApp/Telegram: daftar chat (Grup Kantor di atas, pesan terakhir, jam, tanda belum dibaca), percakapan dengan header status (online / di mess / sedang tidur / sedang sholat / *sedang mengetik…*), gelembung berekor, nama pengirim berwarna di grup, pemisah tanggal, centang ✓/✓✓ (biru = sudah dibalas), Enter untuk kirim. Perbaikan: balasan grup sempat gagal karena batas token model; sekarang token lebih longgar + dicoba ulang sekali, kalau tetap gagal Alex memberi tahu di grup. |
 | 2026-11-27 | Kantor seperti kehidupan nyata: **Grup Kantor** (karyawan saling komentar hasil kerja, kasih ide, menyanggah, berdebat, ngobrol santai; Director bisa baca & menyuruh lewat web dan Telegram `/grup`), karyawan berkumpul + balon kata di 3D saat ngobrol; **Mess karyawan** dengan 9 kamar tidur + ruang santai; jadwal 24 jam (bangun, Subuh, sarapan, kerja, pulang, makan malam, Isya, tidur), akhir pekan di mess. Migrasi `005_office_social`. |
 | 2026-11-27 | Kantor jadi kampus 3×3 (9 ruangan dengan pintu & koridor, bukan memanjang) + kamera baru: pan, pinch/scroll zoom ke titik, putar, fokus & ikuti karyawan, lompat ruangan, tur opsional. Gaya `gedung30` menampilkan kampus diperkecil (sebagian tertutup lantai gedung). |

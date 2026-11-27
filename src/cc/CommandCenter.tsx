@@ -3,7 +3,7 @@ import { api, ApiError, fmtAgo, usd, STATUS_LABEL, TYPE_LABEL, type Employee, ty
 import TaskView from './TaskView';
 import NewTask from './NewTask';
 import Chat from './Chat';
-import { Projects, SeriesList, Settings, Social } from './Studio';
+import { Profiles, Projects, SeriesList, Settings, Social } from './Studio';
 import './cc.css';
 
 export type Focus = { task?: string; chat?: string; tab?: Tab } | null;
@@ -101,7 +101,7 @@ export default function CommandCenter({ open, onClose, focus, onAuth, onUnread }
           </>)}
 
           {tab === 'chat' && <Chat employees={employees} thread={thread} setThread={setThread} />}
-          {tab === 'studio' && <><SeriesList onOpen={openTask} /><Social /><Projects projects={projects} reload={refresh} /></>}
+          {tab === 'studio' && <><Profiles /><SeriesList onOpen={openTask} /><Social /><Projects projects={projects} reload={refresh} /></>}
           {tab === 'settings' && <><Settings /><button className="lc-logout" onClick={() => void logout()}>Keluar</button></>}
         </div>
       </>}

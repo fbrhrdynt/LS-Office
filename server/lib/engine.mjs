@@ -1,6 +1,7 @@
 import { tx } from './db.mjs';
 import { config } from './config.mjs';
 import { respond } from './ai.mjs';
+import { profileText, recentIdeaTitles } from './profiles.mjs';
 import { WORKFLOWS, COORDINATOR, GATE_LABEL, stepDef, STORY_EPISODE_WORKFLOW, durationTarget } from '../workflows.mjs';
 
 export const TASK_TYPES = ['text', 'animated_video', 'web_build', 'web_update', 'story_series', 'story_episode'];
@@ -39,7 +40,15 @@ export async function createTask(pool, input) {
   if (Array.isArray(input.platforms)) meta.platforms = input.platforms.filter((p) => ['tiktok', 'instagram', 'youtube', 'facebook'].includes(p));
   if (input.source) meta.source = String(input.source).slice(0, 20);
   if ([1, 2, 3].includes(Number(input.durationMin))) meta.durationMin = Number(input.durationMin);
+  if (input.scriptReview === false) meta.scriptReview = false;
   return tx(pool, async (c) => {
+    if (['animated_video', 'story_series'].includes(taskType)) {
+      // The chosen account profile, else the default one; it follows the task (and a series' parts) for good.
+      const pid = Number(input.profileId) || null;
+      const p = pid ? await c.query('SELECT id FROM content_profiles WHERE id=$1', [pid]) : await c.query('SELECT id FROM content_profiles WHERE is_default LIMIT 1');
+      if (pid && !p.rowCount) throw Object.assign(new Error('Profil akun tidak ditemukan'), { status: 400 });
+      if (p.rowCount) meta.profileId = String(p.rows[0].id);
+    }
     const a = await c.query("SELECT id FROM employees WHERE id=$1 AND active AND id<>'alex'", [assigneeId]);
     if (!a.rowCount) throw Object.assign(new Error('Invalid assignee'), { status: 400 });
     if (taskType === 'web_update') {
@@ -117,7 +126,9 @@ export async function complete(pool, job, { text = '', json = null, artifact = n
       return true;
     }
     if (artifact) await c.query('UPDATE tasks SET artifact_path=$2,artifact_mime=$3,artifact_name=$4,updated_at=now() WHERE id=$1', [job.id, artifact.path, artifact.mime, artifact.name]);
-    const gate = stepDef(job.task_type, job.step_key)?.gate;
+    let gate = stepDef(job.task_type, job.step_key)?.gate;
+    // The Director may skip the script checkpoint per task, but a script that still fails Daren's check always stops here.
+    if (gate === 'approve_script' && job.meta?.scriptReview === false && json?.lolos) gate = null;
     await queueTalk(c, job.id, { stepKey: job.step_key, step: job.step_title, task: job.title, by: job.step_assignee || 'engine', excerpt: String(text).slice(0, 1500) });
     const u = await c.query('UPDATE workflow_steps SET status=$2,output_text=$3,output_json=$4,finished_at=now() WHERE id=$1 AND status=\'running\' RETURNING id', [job.step_id, gate ? 'awaiting_approval' : 'completed', text, json ? JSON.stringify(json) : null]);
     if (!u.rowCount) return false;
@@ -216,6 +227,14 @@ export async function workContext(pool, job) {
     const d = durationTarget(job.task_type, meta);
     parts.push('TARGET DURASI: ' + d.label + (job.task_type === 'story_series' ? ' per part' : '') + ' (narasi ' + d.words[0] + '-' + d.words[1] + ' kata, ' + d.scenes[0] + '-' + d.scenes[1] + ' adegan)');
   }
+  if (meta.profileId && ['animated_video', 'story_series', 'story_episode'].includes(job.task_type)) {
+    const prof = (await pool.query('SELECT * FROM content_profiles WHERE id=$1', [meta.profileId])).rows[0];
+    if (prof) parts.push(profileText(prof));
+  }
+  if (job.step_key === 'ideas' && ['animated_video', 'story_series'].includes(job.task_type)) {
+    const done = await recentIdeaTitles(pool, job.id, meta.profileId ?? null);
+    if (done.length) parts.push('### IDE YANG SUDAH PERNAH DIBUAT AKUN INI (jangan usulkan yang sama atau mirip)\n' + done.map((x) => '- ' + x).join('\n'));
+  }
   if (job.project_id) {
     const p = await pool.query('SELECT name,slug,repo_url,default_branch,notes FROM dev_projects WHERE id=$1', [job.project_id]);
     if (p.rowCount) parts.push('Proyek: ' + p.rows[0].name + ' (' + p.rows[0].slug + ')' + (p.rows[0].notes ? '\nCatatan proyek: ' + p.rows[0].notes : ''));
@@ -265,6 +284,7 @@ export function selectedIdeaText(step) {
 function summarizeForDirector(gate, text, json) {
   if (gate === 'choose_idea' && json?.ideas) return json.ideas.map((x, i) => (i + 1) + '. ' + x.title + '\n   Hook: ' + x.hook + ' [' + x.format + ']').join('\n') + '\n\nRekomendasi: ' + json.recommendation;
   if (gate === 'publish' && json?.posts) return 'Jadwal usulan: ' + json.recommended_time + ' WIB\n' + json.posts.map((p) => p.platform.toUpperCase() + ': ' + p.caption.slice(0, 200)).join('\n');
+  if (gate === 'approve_script') return String(text).slice(0, 3400);
   if (gate === 'approve_plan' && json?.summary) return json.summary + '\n\nFitur: ' + json.features.join(', ');
   return String(text).slice(0, 900);
 }
@@ -281,7 +301,7 @@ export async function routeRevision(pool, taskId, notes, options) {
       system: 'Kamu Alex, AI Managing Director. Tentukan tahap produksi paling awal yang harus diulang agar revisi Director terpenuhi. script = isi/kata-kata narasi; storyboard = visual, gambar, urutan adegan, label, kartu; audio_direction = suara, tempo, intonasi, pengucapan; render_video = masalah teknis render saja; plan = rencana/fitur; implement = kode/tampilan.',
       user: 'Revisi Director: ' + notes + '\nPilihan tahap: ' + options.join(', '),
       schema: { type: 'object', additionalProperties: false, required: ['step', 'reason'], properties: { step: { type: 'string', enum: options }, reason: { type: 'string' } } },
-      schemaName: 'revision_route', maxOutputTokens: 2000, ctx: { pool, taskId, stepKey: 'revision_routing' },
+      schemaName: 'revision_route', maxOutputTokens: 6000, effort: 'low', ctx: { pool, taskId, stepKey: 'revision_routing' },
     });
     return r.json;
   } catch (error) {

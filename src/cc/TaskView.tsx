@@ -45,9 +45,11 @@ export default function TaskView({ id, onClose, onChanged }: { id: string; onClo
         {gate === 'publish' && gateStep && <PublishPlan step={gateStep} meta={task.meta} busy={busy} onApprove={(x) => decide('approved', x, 'Disetujui. Posting masuk jadwal.')} />}
         {gate === 'approve_plan' && gateStep && <Output title="Rencana teknis Arvin" text={gateStep.output_text} open />}
         {gate === 'approve_series' && gateStep && <Output title="Rancangan seri dari Felix" text={gateStep.output_text} open />}
+        {gate === 'approve_script' && gateStep && <><Output title="Cek naskah Daren + naskah Felix" text={gateStep.output_text} open /><p className="lc-muted">Setujui = naskah masuk produksi (gambar, suara, render). Revisi = Felix menulis ulang, Daren cek lagi.</p></>}
         {gate === 'web_review' && gateStep && <WebReview step={gateStep} />}
         {gate === 'task_review' && <Output title={'Hasil ' + task.assignee_name} text={lastRun?.output_text || ''} open />}
         {['approve_plan', 'approve_series', 'web_review', 'task_review'].includes(gate) && <button className="lc-primary" disabled={busy} onClick={() => void decide('approved', {}, 'Disetujui.')}>✅ Approve</button>}
+        {gate === 'approve_script' && <button className="lc-primary" disabled={busy} onClick={() => void decide('approved', {}, 'Naskah disetujui. Ethan mulai storyboard.')}>✅ Setujui naskah, lanjut produksi</button>}
         <Revise gate={gate} busy={busy} onSend={(notes, restartFrom) => decide('changes_requested', { notes, restartFrom }, 'Revisi terkirim.')} onReject={() => { if (confirm('Tolak task ini? Semua tahap berikutnya dibatalkan.')) void decide('rejected', {}, 'Task ditolak.'); }} />
       </div>}
 
