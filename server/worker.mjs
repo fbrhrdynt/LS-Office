@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { stat } from 'node:fs/promises';
 import { startWorker } from './lib/runner.mjs';
-import { respond, listElevenVoices, narrationVoices } from './lib/ai.mjs';
+import { respond, listElevenVoices, narrationVoices, voiceNamedIn } from './lib/ai.mjs';
 import { workContext } from './lib/engine.mjs';
 import { answerNextMessage } from './lib/chat.mjs';
 import { config } from './lib/config.mjs';
@@ -30,8 +30,14 @@ async function agentStep(job, { pool }) {
   let voiceNote = '';
   if (job.step_key === 'audio_direction' && config.ttsProvider === 'elevenlabs') {
     // Maya chooses from the voices that really exist on the ElevenLabs account; a series keeps its first voice.
-    const fixed = job.series_id ? (await pool.query('SELECT voice_name FROM series WHERE id=$1', [job.series_id])).rows[0]?.voice_name : null;
     const voices = narrationVoices(await listElevenVoices()).slice(0, 80);
+    let fixed = job.series_id ? (await pool.query('SELECT voice_name FROM series WHERE id=$1', [job.series_id])).rows[0]?.voice_name : null;
+    // The Director can move a series to another voice by naming it in a revision ("ganti suara ke Yudo").
+    const asked = voiceNamedIn([job.step_revision_notes, job.revision_notes].filter(Boolean).join(' '), voices);
+    if (asked && job.series_id && asked.name !== fixed) {
+      await pool.query('UPDATE series SET voice_id=$2,voice_name=$3,updated_at=now() WHERE id=$1', [job.series_id, asked.id, asked.name]);
+      fixed = asked.name;
+    } else if (asked && !job.series_id) fixed = asked.name;
     if (!voices.length) throw new Error('Akun ElevenLabs belum punya suara');
     const names = fixed ? [fixed] : [...new Set(voices.map((v) => v.name))];
     schema = { ...schema, properties: { ...schema.properties, voice: { type: 'string', enum: names, description: 'ElevenLabs voice name' } } };

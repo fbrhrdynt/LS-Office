@@ -127,6 +127,15 @@ export async function listElevenVoices() {
   return voices;
 }
 
+/** A voice the Director named in free text ("ganti suara ke Yudo"), matched on the voice's first name. */
+export function voiceNamedIn(text, voices) {
+  const t = String(text || '').toLowerCase();
+  return voices.find((v) => {
+    const first = String(v.name).split(/\s+-\s+|\s+/)[0].toLowerCase();
+    return first.length >= 3 && new RegExp('(^|[^a-z])' + first + '([^a-z]|$)').test(t);
+  }) || null;
+}
+
 /** Indonesian voices first: if the account has any, only those are offered for narration. */
 export function narrationVoices(voices) {
   const indonesian = voices.filter((v) => v.labels?.language === 'id' || /^id(-|$)/i.test(v.labels?.locale || ''));

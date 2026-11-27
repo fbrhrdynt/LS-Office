@@ -91,11 +91,13 @@ export function Settings() {
   );
 }
 
-type SeriesRow = { id: string; title: string; logline: string; total_parts: number; status: string; parts: { id: string; part: number; title: string; status: string }[] };
+type SeriesRow = { id: string; title: string; logline: string; total_parts: number; status: string; voice_id: string | null; voice_name: string | null; parts: { id: string; part: number; title: string; status: string }[] };
 export function SeriesList({ onOpen }: { onOpen: (id: string) => void }) {
   const [rows, setRows] = useState<SeriesRow[]>([]);
   const [error, setError] = useState('');
   const load = useCallback(async () => { setRows((await api<{ series: SeriesRow[] }>('/series')).series); }, []);
+  const [voices, setVoices] = useState<{ id: string; name: string; description: string }[]>([]);
+  useEffect(() => { void api<{ voices: { id: string; name: string; description: string }[] }>('/voices').then((r) => setVoices(r.voices)).catch(() => {}); }, []);
   useEffect(() => { void load(); const t = window.setInterval(() => void load(), 6000); return () => window.clearInterval(t); }, [load]);
   if (!rows.length) return null;
   const act = (id: string, a: string) => api('/series/' + id + '/' + a, { json: {} }).then(load).catch((e) => setError((e as Error).message));
@@ -106,6 +108,7 @@ export function SeriesList({ onOpen }: { onOpen: (id: string) => void }) {
         <div key={s.id} className="lc-card">
           <div className="lc-row between"><b>🎞️ {s.title}</b><span className="lc-chip sm" data-s={s.status === 'active' ? 'in_progress' : s.status === 'finished' ? 'completed' : 'pending'}>{s.status === 'active' ? 'Berjalan' : s.status === 'finished' ? 'Tamat' : 'Dijeda'}</span></div>
           <p className="lc-muted">{s.logline}</p>
+          {voices.length > 0 && <label className="lc-field">Suara narator seri (berlaku untuk render berikutnya)<select value={s.voice_id || ''} onChange={(e) => void api('/series/' + s.id + '/voice', { json: { voiceId: e.target.value } }).then(load).catch((err) => setError((err as Error).message))}><option value="" disabled>Dipilih Maya saat render pertama</option>{voices.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>}
           <div className="lc-parts">{Array.from({ length: s.total_parts }, (_, i) => { const p = s.parts.find((x) => x.part === i + 1); return <button key={i} className="sm" data-s={p?.status || 'none'} disabled={!p} onClick={() => p && onOpen(p.id)} title={p?.title}>Part {i + 1}{p ? ' · ' + (STATUS_LABEL[p.status] || p.status) : ''}</button>; })}</div>
           <div className="lc-row">
             {s.status === 'active' && s.parts.length < s.total_parts && <button className="sm" onClick={() => void act(s.id, 'next')}>+ Produksi part berikutnya sekarang</button>}

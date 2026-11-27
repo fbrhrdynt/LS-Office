@@ -8,6 +8,7 @@ import { signMedia } from './lib/media.mjs';
 import { createPool, migrate, getSetting, setSetting, todayUsage, tx } from './lib/db.mjs';
 import { createTask, decide, retry, cancel, officeState, createEpisodeTask } from './lib/engine.mjs';
 import { buildAuthorizationUrl, completeOAuth, oauthConfiguration } from './social-oauth.mjs';
+import { listElevenVoices, narrationVoices } from './lib/ai.mjs';
 import PERSONNEL from '../shared/personnel.json' with { type: 'json' };
 
 const pool = createPool(Number(process.env.DB_POOL_MAX || 6));
@@ -194,10 +195,23 @@ const server = http.createServer(async (req, res) => {
 
     /* story series */
     if (route === '/api/series' && method === 'GET') {
-      const q = await pool.query(`SELECT s.id,s.title,s.logline,s.total_parts,s.status,s.created_at,
+      const q = await pool.query(`SELECT s.id,s.title,s.logline,s.total_parts,s.status,s.created_at,s.voice_id,s.voice_name,
           COALESCE((SELECT json_agg(json_build_object('id',t.id,'part',t.part_no,'title',t.title,'status',t.status) ORDER BY t.part_no) FROM tasks t WHERE t.series_id=s.id AND t.task_type='story_episode' AND t.status NOT IN ('cancelled','rejected')),'[]') AS parts
         FROM series s ORDER BY s.created_at DESC LIMIT 30`);
       return json(res, 200, { series: q.rows });
+    }
+    if (route === '/api/voices' && method === 'GET') {
+      if (config.ttsProvider !== 'elevenlabs') return json(res, 200, { provider: config.ttsProvider, voices: [] });
+      const all = await listElevenVoices();
+      return json(res, 200, { provider: 'elevenlabs', voices: narrationVoices(all).map((v) => ({ id: v.id, name: v.name, labels: v.labels, description: v.description })) });
+    }
+    const sv = route.match(new RegExp(`^/api/series/(${UUID})/voice$`));
+    if (sv && method === 'POST') {
+      const b = await body(req);
+      const v = (await listElevenVoices()).find((x) => x.id === b.voiceId);
+      if (!v) return json(res, 400, { error: 'Suara tidak ditemukan di akun ElevenLabs' });
+      await pool.query('UPDATE series SET voice_id=$2,voice_name=$3,updated_at=now() WHERE id=$1', [sv[1], v.id, v.name]);
+      return json(res, 200, { ok: true, voice: v.name });
     }
     const sr = route.match(new RegExp(`^/api/series/(${UUID})/(next|pause|resume)$`));
     if (sr && method === 'POST') {

@@ -8,7 +8,7 @@ import { VIDEO_WORKFLOW, WEB_BUILD_WORKFLOW, WEB_UPDATE_WORKFLOW, STORY_SERIES_W
 import { buildPublishPlan, parseLocal } from '../server/lib/engine.mjs';
 import { cleanNarration, alignWords, spokenText, evenWords, hasCues, friendlyVoiceError, deliveryTags, mixArgs } from '../server/video/produce.mjs';
 import { formatOutput } from '../server/lib/format.mjs';
-import { alignmentToWords, narrationVoices } from '../server/lib/ai.mjs';
+import { alignmentToWords, narrationVoices, voiceNamedIn } from '../server/lib/ai.mjs';
 
 let n = 0;
 const t = (name, fn) => { fn(); n++; };
@@ -103,6 +103,11 @@ t('soundtrack mix: music ducked under the voice, ambience and effects placed in 
 });
 t('voice errors are explained in Indonesian', () => {
   assert.match(friendlyVoiceError(new Error('ElevenLabs: Free users cannot use library voices via the API.'), 'Indah'), /Upgrade paket ElevenLabs/);
+});
+t('a revision that names a voice switches to it', () => {
+  const v = [{ id: '1', name: 'Indah - Expressive, Clean' }, { id: '2', name: 'Yudo - Soft, Soothing and Calm' }];
+  assert.equal(voiceNamedIn('ganti suaranya ke Yudo ya, lebih pelan', v).id, '2');
+  assert.equal(voiceNamedIn('suara kurang hangat', v), null);
 });
 t('Indonesian voices are preferred for narration', () => {
   const v = [{ name: 'Bella', labels: { language: 'en' } }, { name: 'Putra', labels: { language: 'id' } }, { name: 'Indah', labels: { locale: 'id-ID' } }];
