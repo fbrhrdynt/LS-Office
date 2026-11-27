@@ -11,6 +11,11 @@ export async function notify(db, { taskId = null, employeeId = null, kind, title
   await db.query('INSERT INTO notifications(task_id,employee_id,kind,title,body,action) VALUES($1,$2,$3,$4,$5,$6)', [taskId, employeeId, kind, title.slice(0, 300), String(body).slice(0, 3500), JSON.stringify(action)]);
 }
 
+/** A real work event the team will talk about in the office group chat (lib/social.mjs). */
+export async function queueTalk(db, taskId, payload) {
+  await db.query('INSERT INTO social_queue(kind,task_id,payload) VALUES($1,$2,$3)', [payload.stepKey === 'decision' ? 'decision' : 'step', taskId, JSON.stringify(payload)]);
+}
+
 export async function event(db, taskId, type, payload = {}) {
   await db.query('INSERT INTO task_events(task_id,event_type,payload) VALUES($1,$2,$3)', [taskId, type, JSON.stringify(payload)]);
 }
@@ -113,6 +118,7 @@ export async function complete(pool, job, { text = '', json = null, artifact = n
     }
     if (artifact) await c.query('UPDATE tasks SET artifact_path=$2,artifact_mime=$3,artifact_name=$4,updated_at=now() WHERE id=$1', [job.id, artifact.path, artifact.mime, artifact.name]);
     const gate = stepDef(job.task_type, job.step_key)?.gate;
+    await queueTalk(c, job.id, { stepKey: job.step_key, step: job.step_title, task: job.title, by: job.step_assignee || 'engine', excerpt: String(text).slice(0, 1500) });
     const u = await c.query('UPDATE workflow_steps SET status=$2,output_text=$3,output_json=$4,finished_at=now() WHERE id=$1 AND status=\'running\' RETURNING id', [job.step_id, gate ? 'awaiting_approval' : 'completed', text, json ? JSON.stringify(json) : null]);
     if (!u.rowCount) return false;
     if (gate) {
@@ -373,6 +379,7 @@ export async function decide(pool, taskId, decision, opts = {}) {
     await c.query('UPDATE tasks SET status=$2,updated_at=now() WHERE id=$1', [taskId, status]);
     await c.query("UPDATE notifications SET read_at=now() WHERE task_id=$1 AND kind='approval' AND read_at IS NULL", [taskId]);
     await event(c, taskId, 'review_' + decision, { notes, checkpoint: result.checkpoint, restartFrom: result.restartFrom || null });
+    await queueTalk(c, taskId, { stepKey: 'decision', task: task.title, decision, notes, checkpoint: result.checkpoint });
     if (status === 'completed') await notify(c, { taskId, kind: 'info', title: 'Selesai: ' + task.title });
     return { ok: true, status, ...result };
   });

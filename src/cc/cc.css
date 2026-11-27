@@ -97,3 +97,5 @@
 @media (max-width: 600px) { .lc { width: 100vw; } .lc-body { padding-bottom: 64px; } .lc-stats { grid-template-columns: repeat(3, 1fr); } .lc-chat { height: calc(100vh - 150px); } }
 
 .lc-parts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; } .lc-parts button[data-s=completed], .lc-parts button[data-s=approved] { border-color: #2c6a3e; } .lc-parts button[data-s=review] { border-color: #f2c14e; } .lc-parts button[data-s=in_progress], .lc-parts button[data-s=queued] { border-color: #35b8a5; }
+.lc-sender { display: block; margin-bottom: 2px; font-size: 0.72rem; font-weight: 700; }
+.lc-msg.them[style] { border-left: 3px solid var(--who); }

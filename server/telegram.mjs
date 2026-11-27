@@ -127,8 +127,27 @@ async function main() {
         return send(chat.id, '✏️ Revisi dikirim' + (r.restartFrom ? ', diulang dari tahap ' + r.restartFrom + (r.routeReason ? ' (' + r.routeReason + ')' : '') : '') + '. Nanti aku kabari hasil barunya.');
       } catch (e) { return send(chat.id, '⚠️ ' + e.message); }
     }
-    if (/^\/(start|help)\b/.test(text)) return send(chat.id, 'Perintah:\n/status — siapa sedang apa\n/video <brief> — minta tim creative bikin video\n/cerita <brief> — minta tim bikin cerita bersambung (Part 1, 2, 3…)\n/web <brief> — minta tim web bikin website baru\n/tugas <@nama> <instruksi> — tugas teks ke karyawan\n\nChat biasa diteruskan ke Alex. Awali dengan @nama untuk chat ke karyawan tertentu, mis. "@nadia ada ide konten hari ini?"');
+    if (/^\/(start|help)\b/.test(text)) return send(chat.id, 'Perintah:\n/status — siapa sedang apa\n/video <brief> — minta tim creative bikin video\n/cerita <brief> — minta tim bikin cerita bersambung (Part 1, 2, 3…)\n/web <brief> — minta tim web bikin website baru\n/tugas <@nama> <instruksi> — tugas teks ke karyawan\n/grup — lihat obrolan Grup Kantor · /grup <pesan> — tulis ke grup · /grup on|off — teruskan obrolan grup ke sini\n\nChat biasa diteruskan ke Alex. Awali dengan @nama untuk chat ke karyawan tertentu, mis. "@nadia ada ide konten hari ini?"');
     if (/^\/status\b/.test(text)) return send(chat.id, await statusText());
+    const grup = /^\/grup(?:@\w+)?(?:\s+([\s\S]+))?$/i.exec(text);
+    if (grup) {
+      const arg = (grup[1] || '').trim();
+      if (/^(on|off)$/i.test(arg)) {
+        const on = arg.toLowerCase() === 'on';
+        await setSetting(pool, 'telegram.grup', { on, lastAt: new Date().toISOString() });
+        return send(chat.id, on ? '👥 Obrolan Grup Kantor akan diteruskan ke sini. Matikan dengan /grup off' : '🔕 Obrolan grup tidak diteruskan lagi. Lihat kapan saja dengan /grup');
+      }
+      if (arg) {
+        await pool.query("INSERT INTO messages(thread,sender,body,channel,status) VALUES('grup','director',$1,'telegram','pending')", [arg.slice(0, 4000)]);
+        // Even with the stream off, forward the group for the next 10 minutes so the team's answers reach you here.
+        const g = await getSetting(pool, 'telegram.grup', null);
+        await setSetting(pool, 'telegram.grup', { on: !!g?.on, lastAt: g?.on && g.lastAt ? g.lastAt : new Date().toISOString(), until: new Date(Date.now() + 10 * 60000).toISOString() });
+        return send(chat.id, '👥 Terkirim ke Grup Kantor. Balasan tim aku teruskan ke sini.');
+      }
+      const r = await pool.query("SELECT sender,body,created_at FROM messages WHERE thread='grup' AND created_at <= now() ORDER BY created_at DESC, id DESC LIMIT 12");
+      if (!r.rowCount) return send(chat.id, '👥 Grup Kantor masih sepi.');
+      return send(chat.id, '👥 Grup Kantor (terbaru di bawah):\n\n' + r.rows.reverse().map((m) => (m.sender === 'director' ? 'Kamu' : name(m.sender)) + ': ' + m.body).join('\n\n'));
+    }
     const cmd = /^\/(video|web|cerita)\s+([\s\S]+)/.exec(text);
     if (cmd) {
       const brief = cmd[2].trim();
@@ -180,6 +199,21 @@ async function main() {
       }
     }
   }
+
+  // Optional stream of the office group chat (/grup on).
+  async function groupStream() {
+    const chat = await linked();
+    const g = await getSetting(pool, 'telegram.grup', null);
+    if (!chat || !(g?.on || (g?.until && new Date(g.until) > new Date()))) return;
+    // Messages are timestamped when they are "said" (a conversation unfolds over minutes), so follow created_at.
+    const r = await pool.query("SELECT sender,body,created_at FROM messages WHERE thread='grup' AND created_at > $1 AND created_at <= now() AND sender <> 'director' ORDER BY created_at, id LIMIT 6", [g.lastAt || new Date().toISOString()]);
+    for (const m of r.rows) {
+      await send(chat.id, '👥 ' + name(m.sender) + ': ' + m.body).catch((e) => console.error('grup stream', e.message));
+      g.lastAt = new Date(m.created_at).toISOString();
+    }
+    if (r.rowCount) await setSetting(pool, 'telegram.grup', g);
+  }
+  setInterval(() => void groupStream().catch((e) => console.error('grup stream', e.message)), 5000);
 
   console.log('ls-office-telegram online');
   const out = setInterval(() => void outbox().catch((e) => console.error('outbox', e.message)), 3000);

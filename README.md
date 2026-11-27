@@ -19,16 +19,28 @@ Buka https://office.febro.id → **⌘ Command Center** → login. Atau lewat **
 |---|---|
 | **Keputusan** | semua yang menunggu kamu: pilih ide, review video, setujui caption & jadwal, setujui rencana web, review preview |
 | **Pekerjaan** | `+ Perintah baru` (Video pendek / Website baru / Update website / Tugas teks), daftar task + progres + biaya |
-| **Chat** | chat dengan Alex atau karyawan mana pun; minta pekerjaan lewat chat → jawab "ya" → jadi task |
+| **Chat** | **👥 Grup Kantor** (semua karyawan ngobrol, diskusi & debat; kamu bisa ikut/menyuruh) + chat pribadi dengan Alex atau karyawan mana pun; minta pekerjaan → jawab "ya" → jadi task |
 | **Studio** | seri cerita (progres per part, jeda/lanjut, produksi part berikutnya), akun sosial, jadwal posting, proyek web |
 | **Pengaturan** | hubungkan Telegram, biaya AI harian (estimasi) |
 
 Kantor 3D berbentuk **kampus 3×3 ruangan** (`src/layout.ts`): Creative Studio · Ruang Direksi · Web Dev (belakang),
 Musholla · Atrium & Lounge (Mission Board) · Ruang Rapat (tengah), Pantry & Kopi · Lobby (pintu masuk) · Marketing &
-Analytics (depan), dihubungkan koridor. Tiap karyawan punya jadwal sendiri (`shared/personnel.json` → `schedule`): jam
-datang/pulang, rapat pagi, ngopi, makan siang, istirahat, dan **sholat Dzuhur/Ashar/Maghrib** sesuai jadwal sholat
-Jakarta (dihitung otomatis). Mereka berjalan lewat pintu dan koridor. Pekerjaan asli selalu menang (task / menunggu
-keputusanmu / kendala ⇒ di meja; di luar jam kerja tertulis "lembur").
+Analytics (depan), dihubungkan koridor. Di sebelah timur ada **Mess karyawan** (selasar dari koridor depan): 9 kamar
+tidur (satu per karyawan) + ruang santai/makan dengan TV.
+
+Tiap karyawan punya jadwal 24 jam sendiri (`shared/personnel.json` → `schedule`): bangun, sholat **Subuh/Dzuhur/Ashar/
+Maghrib/Isya** sesuai jadwal sholat Jakarta, siap-siap & sarapan di mess, datang ke kantor, rapat pagi, ngopi, makan
+siang, istirahat, pulang, mandi, makan malam & santai di mess, lalu **tidur di kamarnya** (malam hari kantor kosong,
+semua bisa dipantau di mess). Sabtu–Minggu libur: santai di mess, makan di pantry, sore jalan-jalan keluar. Mereka
+berjalan lewat pintu, koridor dan selasar. Pekerjaan asli menang: task yang sedang dikerjakan selalu di meja (malam =
+"lembur"); menunggu keputusanmu / kendala menarik ke meja hanya saat jam kerja — di luar itu tanda "!" tetap di label.
+
+**Kehidupan sosial** (`server/lib/social.mjs`): karyawan saling ngobrol di **Grup Kantor**. Setelah ada hasil kerja
+nyata (naskah, storyboard, QA, keputusanmu) rekan setimnya berkomentar, memberi ide, menyanggah dan berdebat; jam
+makan siang, ngopi sore dan malam di mess ada obrolan santai. Di kantor 3D mereka benar-benar **berkumpul** (lounge /
+ruang rapat / pantry / mess) dengan balon kata sesuai chat-nya. Kepribadian per orang ada di `personality`. Obrolan
+tidak boleh mengarang progres atau angka. Yang sedang tidur tidak membalas. Batas: `SOCIAL_MAX_PER_DAY` (28) obrolan
+per hari, jeda `SOCIAL_GAP_MIN` (25 menit) — tiap obrolan = 1 panggilan gpt-5-mini (±$0,002).
 
 **Kamera:** geser 1 jari / drag = pindah, **pinch / scroll = zoom ke titik**, 2 jari memutar / klik kanan / shift+drag =
 putar, ketuk dua kali = lihat semua. Klik nama karyawan = kamera terbang & **mengikuti** dia; bar bawah = lompat ke
@@ -78,6 +90,14 @@ Arvin rencana teknis ──▶ [KAMU setujui]
   ▶ Arvin rilis: website baru → https://office.febro.id/sites/<slug>/ · proyek lama → merge + push ke repo
 ```
 
+### Grup Kantor (web & Telegram)
+```
+Kamu tulis di Grup Kantor (web: Chat → 👥 Grup Kantor, Telegram: /grup <pesan>)
+  ▶ 1–3 orang paling relevan menjawab sesuai karakter (yang disebut namanya wajib jawab, boleh beda pendapat)
+  ▶ kalau kamu minta pekerjaan, Alex menawarkan task → jawab "ya" → task dibuat & masuk antrean
+Tim juga ngobrol sendiri (komentar hasil kerja, ide, debat, obrolan santai); Telegram `/grup on` meneruskan obrolan grup.
+```
+
 ### Aturan yang dijaga sistem
 - Tidak ada yang terbit tanpa persetujuanmu; agen tidak mengklaim hasil yang tidak ada.
 - Output AI divalidasi (narasi tanpa catatan produksi, durasi, caption tanpa catatan internal); bila gagal, agen
@@ -92,9 +112,10 @@ Arvin rencana teknis ──▶ [KAMU setujui]
 | Video pendek (explainer & cards) end-to-end | ✅ berjalan (uji: ±$0.42/video, render ±3 menit) |
 | Chat web dengan Alex & personnel | ✅ berjalan |
 | Kantor 3D berbasis status nyata | ✅ berjalan |
+| Grup Kantor (obrolan, ide, debat antar karyawan; web + Telegram), mess & kamar tidur, jadwal 24 jam | ✅ berjalan |
 | Tim Web Dev (Claude Code) | ✅ diuji di dev; production perlu token Claude di `/etc/ls-office/devagent.env` |
 | Suara narator ElevenLabs | ✅ siap, aktif setelah `ELEVENLABS_API_KEY` diisi |
-| Bot Telegram | ⏳ siap, perlu `TELEGRAM_BOT_TOKEN` |
+| Bot Telegram | ✅ berjalan (@lsai_officebot terhubung) |
 | Posting TikTok / IG / FB / YouTube | ⏳ siap, perlu developer app + akun terhubung; belum diuji dengan akun asli |
 | Video cerita bersambung (Part 1, 2, 3…) dengan tokoh konsisten | ✅ berjalan (±$1–1.5 per part, render ±5–8 menit) |
 
@@ -126,6 +147,7 @@ Aturan kerja: kembangkan di branch/worktree terpisah dan database dev (salinan d
 
 | Tanggal | Perubahan |
 |---|---|
+| 2026-11-27 | Kantor seperti kehidupan nyata: **Grup Kantor** (karyawan saling komentar hasil kerja, kasih ide, menyanggah, berdebat, ngobrol santai; Director bisa baca & menyuruh lewat web dan Telegram `/grup`), karyawan berkumpul + balon kata di 3D saat ngobrol; **Mess karyawan** dengan 9 kamar tidur + ruang santai; jadwal 24 jam (bangun, Subuh, sarapan, kerja, pulang, makan malam, Isya, tidur), akhir pekan di mess. Migrasi `005_office_social`. |
 | 2026-11-27 | Kantor jadi kampus 3×3 (9 ruangan dengan pintu & koridor, bukan memanjang) + kamera baru: pan, pinch/scroll zoom ke titik, putar, fokus & ikuti karyawan, lompat ruangan, tur opsional. Gaya `gedung30` menampilkan kampus diperkecil (sebagian tertutup lantai gedung). |
 | 2026-11-27 | Kantor 3D realistis: sayap musholla + pantry & kopi dan ruang rapat + lounge, pintu masuk; jadwal harian per karyawan (datang, rapat pagi, ngopi, makan siang, sholat sesuai jadwal sholat Jakarta, istirahat, pulang) dengan jalan bertujuan lewat koridor dan pose sholat/makan/rapat/santai; label ruangan; jadwal sholat berikutnya di HUD. Status kerja asli tetap prioritas. |
 | 2026-11-27 | Ganti suara seri: tulis nama suara di revisi (mis. "ganti suara ke Yudo") atau pilih di Studio → Seri cerita → Suara narator. Sebelumnya suara terkunci ke pilihan pertama dan revisi suara diabaikan. |

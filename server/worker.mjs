@@ -5,6 +5,7 @@ import { startWorker } from './lib/runner.mjs';
 import { respond, listElevenVoices, narrationVoices, voiceNamedIn } from './lib/ai.mjs';
 import { workContext } from './lib/engine.mjs';
 import { answerNextMessage } from './lib/chat.mjs';
+import { socialTick } from './lib/social.mjs';
 import { config } from './lib/config.mjs';
 import { SCHEMAS, stepDef, durationTarget } from './workflows.mjs';
 import { formatOutput } from './lib/format.mjs';
@@ -135,5 +136,5 @@ await startWorker({
   name: 'ls-office-worker',
   executors: ['agent', 'qa'],
   execute: (job, opts) => (job.executor === 'qa' ? qaVideo(job, opts) : agentStep(job, opts)),
-  extraLoops: [{ every: 1500, fn: answerNextMessage }],
+  extraLoops: [{ every: 1500, fn: answerNextMessage }, { every: 4000, fn: socialTick }],
 });

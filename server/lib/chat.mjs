@@ -40,7 +40,7 @@ async function snapshot(pool, thread) {
 /** Answers one pending Director message. Returns true if a message was handled. */
 export async function answerNextMessage(pool) {
   const msg = await tx(pool, async (c) => {
-    const r = await c.query("SELECT * FROM messages WHERE status='pending' AND sender='director' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED");
+    const r = await c.query("SELECT * FROM messages WHERE status='pending' AND sender='director' AND thread<>'grup' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED");
     if (!r.rowCount) return null;
     await c.query("UPDATE messages SET status='done' WHERE id=$1", [r.rows[0].id]);
     return r.rows[0];

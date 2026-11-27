@@ -130,4 +130,14 @@ t('captions: short chunks, keyword highlighted, no gaps', () => {
   assert.equal(hit.words[hit.highlight], 'menyetrum');
   for (let i = 0; i < chunks.length - 1; i++) assert.ok(chunks[i].end <= chunks[i + 1].start + 1e-9);
 });
+const S = await import('../server/lib/social.mjs');
+t('social: whereIs follows the personal schedule (WIB)', () => {
+  const p = { schedule: { arrive: '07:52', leave: '16:58', sleep: '22:10', wake: '04:40' } };
+  const at = (iso) => S.whereIs(p, new Date(iso));
+  assert.equal(at('2026-11-26T03:00:00Z'), 'kantor'); // Thu 10:00 WIB
+  assert.equal(at('2026-11-26T12:00:00Z'), 'mess'); // Thu 19:00 WIB
+  assert.equal(at('2026-11-26T16:00:00Z'), 'tidur'); // Thu 23:00 WIB
+  assert.equal(at('2026-11-28T03:00:00Z'), 'mess'); // Sat 10:00 WIB
+  assert.equal(S.whereIs({}, new Date()), 'kantor');
+});
 console.log(n + ' workflow tests passed');

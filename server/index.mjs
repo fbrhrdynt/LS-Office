@@ -9,6 +9,7 @@ import { createPool, migrate, getSetting, setSetting, todayUsage, tx } from './l
 import { createTask, decide, retry, cancel, officeState, createEpisodeTask } from './lib/engine.mjs';
 import { buildAuthorizationUrl, completeOAuth, oauthConfiguration } from './social-oauth.mjs';
 import { listElevenVoices, narrationVoices } from './lib/ai.mjs';
+import { activeConversations, GROUP } from './lib/social.mjs';
 import PERSONNEL from '../shared/personnel.json' with { type: 'json' };
 
 const pool = createPool(Number(process.env.DB_POOL_MAX || 6));
@@ -102,7 +103,7 @@ const server = http.createServer(async (req, res) => {
       setSessionCookie(res, '', 0);
       return json(res, 200, { ok: true });
     }
-    if (route === '/api/office/public' && method === 'GET') return json(res, 200, { state: PUBLIC_STATE(await officeState(pool)) });
+    if (route === '/api/office/public' && method === 'GET') return json(res, 200, { state: PUBLIC_STATE(await officeState(pool)), conversations: await activeConversations(pool, false) });
     const pub = route.match(new RegExp(`^/api/public/media/(${UUID})$`));
     if (pub && (method === 'GET' || method === 'HEAD')) {
       const exp = Number(url.searchParams.get('exp'));
@@ -136,7 +137,7 @@ const server = http.createServer(async (req, res) => {
     if (route === '/api/employees' && method === 'GET') {
       return json(res, 200, { employees: PERSONNEL.map(({ prompt, ...p }) => ({ id: p.key, ...p })) });
     }
-    if (route === '/api/office' && method === 'GET') return json(res, 200, { state: await officeState(pool) });
+    if (route === '/api/office' && method === 'GET') return json(res, 200, { state: await officeState(pool), conversations: await activeConversations(pool, true) });
     if (route === '/api/overview' && method === 'GET') {
       const c = await pool.query('SELECT status,count(*)::int AS count FROM tasks GROUP BY status');
       const r = await pool.query('SELECT e.id,e.task_id AS "taskId",e.event_type AS type,e.created_at AS "createdAt",t.title FROM task_events e LEFT JOIN tasks t ON t.id=e.task_id ORDER BY e.created_at DESC LIMIT 15');
@@ -257,14 +258,14 @@ const server = http.createServer(async (req, res) => {
 
     /* chat */
     if (route === '/api/chat' && method === 'GET') {
-      const q = await pool.query("SELECT DISTINCT ON (thread) thread,sender,body,created_at FROM messages ORDER BY thread,created_at DESC");
+      const q = await pool.query("SELECT DISTINCT ON (thread) thread,sender,body,created_at FROM messages WHERE created_at <= now() ORDER BY thread,created_at DESC");
       const pending = await pool.query("SELECT thread,count(*)::int AS n FROM messages WHERE status='pending' GROUP BY thread");
       return json(res, 200, { threads: q.rows, pending: Object.fromEntries(pending.rows.map((r) => [r.thread, r.n])) });
     }
     const chat = route.match(/^\/api\/chat\/([a-z]{2,20})$/);
-    if (chat && PERSONNEL.some((p) => p.key === chat[1])) {
+    if (chat && (chat[1] === GROUP || PERSONNEL.some((p) => p.key === chat[1]))) {
       if (method === 'GET') {
-        const q = await pool.query('SELECT id,sender,body,channel,status,meta,created_at FROM messages WHERE thread=$1 ORDER BY id DESC LIMIT 60', [chat[1]]);
+        const q = await pool.query('SELECT id,sender,body,channel,status,meta,created_at FROM messages WHERE thread=$1 AND created_at <= now() ORDER BY created_at DESC, id DESC LIMIT 80', [chat[1]]);
         return json(res, 200, { messages: q.rows.reverse() });
       }
       if (method === 'POST') {

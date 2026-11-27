@@ -20,6 +20,10 @@ export interface DeskState {
   /** Where the person physically is (schedule + real work state). Default: at the desk. */
   spot?: Spot;
   bubble: string | null;
+  /** Saying something in a conversation right now (scene gestures). */
+  talking?: boolean;
+  /** Their latest line in a conversation (speech bubble). */
+  say?: string | null;
   waiting: string[];
   urgent: string[];
 }
@@ -152,8 +156,8 @@ export function fidgetAt(key: string, t: number): { fidget: Fidget; k: number } 
 
 /* ---------- hari kerja yang nyata: datang, rapat, ngopi, sholat, makan, istirahat, pulang ---------- */
 
-export type Spot = 'rumah' | 'meja' | 'kopi' | 'makan' | 'musholla' | 'lounge' | 'rapat';
-export interface Schedule { arrive: string; leave: string; prays: boolean; coffee: string[]; lunch: string; standup: string }
+export type Spot = 'rumah' | 'meja' | 'kopi' | 'makan' | 'musholla' | 'lounge' | 'rapat' | 'ngobrol' | 'mess' | 'kamar' | 'tidur';
+export interface Schedule { arrive: string; leave: string; prays: boolean; coffee: string[]; lunch: string; standup: string; sleep?: string; wake?: string }
 export interface Planned { spot: Spot; label: string }
 
 const within = (t: number, start: number, minutes: number) => t >= start && t < start + minutes;
@@ -165,21 +169,34 @@ const offsetOf = (key: string, span: number) => { let h = 0; for (const c of key
  */
 export function plannedSpot(key: string, s: Schedule | undefined, t: number, day: number, pt: Record<string, number>): Planned {
   if (!s) return { spot: 'meja', label: 'siap menerima perintah' };
-  if (day > 5) return { spot: 'rumah', label: 'libur akhir pekan' };
   const arrive = toMin(s.arrive), leave = toMin(s.leave);
-  if (t < arrive) return { spot: 'rumah', label: 'belum datang (masuk ' + s.arrive.replace(':', '.') + ')' };
-  if (t >= leave) return { spot: 'rumah', label: 'sudah pulang' };
-  if (t < arrive + 6) return { spot: 'meja', label: 'baru datang' };
+  const sleep = toMin(s.sleep ?? '22:30'), wake = toMin(s.wake ?? '04:45');
+  const asleep = sleep > wake ? t >= sleep || t < wake : t >= sleep && t < wake;
+  if (asleep) return { spot: 'tidur', label: 'tidur' };
   const o = offsetOf(key, 8);
+  const workday = day <= 5;
+  const atWork = workday && t >= arrive && t < leave;
   if (s.prays) {
-    for (const name of ['Dzuhur', 'Ashar', 'Maghrib'] as const) {
+    for (const name of ['Subuh', 'Dzuhur', 'Ashar', 'Maghrib', 'Isya'] as const) {
       const p = pt[name];
       if (p !== undefined && within(t, p + o, 13)) return { spot: 'musholla', label: 'sholat ' + name };
     }
   }
-  if (within(t, toMin(s.standup), 15)) return { spot: 'rapat', label: 'rapat pagi tim' };
-  if (within(t, toMin(s.lunch), 35)) return { spot: 'makan', label: 'makan siang' };
-  for (const c of s.coffee) if (within(t, toMin(c), 10)) return { spot: 'kopi', label: 'ngopi di pantry' };
-  if (within(t, toMin('15:50') + offsetOf(key, 25), 12)) return { spot: 'lounge', label: 'istirahat sebentar di lounge' };
-  return { spot: 'meja', label: 'siap menerima perintah' };
+  if (atWork) {
+    if (t < arrive + 6) return { spot: 'meja', label: 'baru datang' };
+    if (within(t, toMin(s.standup), 15)) return { spot: 'rapat', label: 'rapat pagi tim' };
+    if (within(t, toMin(s.lunch), 35)) return { spot: 'makan', label: 'makan siang' };
+    for (const c of s.coffee) if (within(t, toMin(c), 10)) return { spot: 'kopi', label: 'ngopi di pantry' };
+    if (within(t, toMin('15:50') + offsetOf(key, 25), 12)) return { spot: 'lounge', label: 'istirahat sebentar di lounge' };
+    return { spot: 'meja', label: 'siap menerima perintah' };
+  }
+  // Life at the mess: morning routine, evening routine, weekends.
+  if (t >= wake && t < wake + 25) return { spot: 'kamar', label: 'bangun, mandi & siap-siap' };
+  if (workday && t < arrive) return t >= arrive - 35 ? { spot: 'mess', label: 'sarapan di mess' } : { spot: 'kamar', label: 'santai pagi di kamar' };
+  if (workday && t >= leave && t < leave + 25) return { spot: 'kamar', label: 'pulang, mandi & ganti baju' };
+  if (!workday && t >= 16 * 60 + offsetOf(key, 40) && t < 18 * 60 + 30) return { spot: 'rumah', label: 'jalan-jalan keluar' };
+  if (!workday && within(t, 12 * 60 + offsetOf(key, 30), 40)) return { spot: 'makan', label: 'makan siang di pantry' };
+  if (t >= 18 * 60 + 40 && t < 19 * 60 + 25) return { spot: 'mess', label: 'makan malam di mess' };
+  if (t >= 19 * 60 + 25 && t < 21 * 60) return { spot: 'mess', label: 'santai di ruang santai mess' };
+  return { spot: 'kamar', label: !workday && t < 16 * 60 ? 'libur, santai di kamar' : 'santai di kamar' };
 }

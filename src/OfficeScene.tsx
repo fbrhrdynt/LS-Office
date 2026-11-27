@@ -24,7 +24,7 @@ import {
 import { buatKitGaya } from './gaya';
 import type { Dunia, Peran } from './gaya/alat';
 import { fidgetAt, type DeskState, type Spot } from './office';
-import { BOUNDS, ENTRANCE_PLACE, PLACES, ROOMS, deskVia, roomByKey, roomCenter, route, type Place, type Room } from './layout';
+import { BEDROOMS, BOUNDS, ENTRANCE_PLACE, MESS, MESS_COMMON, MESS_HALL, OFFICE_ROOMS, PLACES, ROOMS, bedroomOf, deskVia, roomByKey, roomCenter, route, type Place, type Room } from './layout';
 
 /*
  * Kantor AI 3D (Three.js): kampus 3 x 3 ruangan (src/layout.ts). Bentuk dan bahan datang dari gaya aktif (src/gaya);
@@ -174,6 +174,15 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
     box(W, 0.12, D, hallM, 0, -0.08, 0);
     const floors: { m: ReturnType<typeof mat>; day: string; night: string }[] = [{ m: hallM, day: '#e9dfd2', night: shade('#e9dfd2', 0.32) }];
     for (let z = Z0 + 0.6; z < Z1; z += 1.2) box(W - 0.1, 0.004, 0.02, lineM, 0, -0.015, z);
+    // Mess karyawan (east): its own base and corridor, joined to the office by a covered walkway (z = 3.7).
+    const MW = MESS.x1 - MESS.x0, MD = MESS.z1 - MESS.z0, MX = (MESS.x0 + MESS.x1) / 2;
+    box(MW + 1.2, 0.5, MD + 1.2, mat('#3a2a5c', 'alas'), MX, -0.4, 0);
+    box(MW, 0.12, MD, hallM, MX, -0.08, 0);
+    box(MESS.x0 - X1 + 0.2, 0.12, 1.4, hallM, (X1 + MESS.x0) / 2, -0.08, 3.7);
+    box(MESS.x0 - X1 + 0.2, 0.08, 1.6, trimM, (X1 + MESS.x0) / 2, 2.4, 3.7);
+    for (const x of [X1 + 0.3, MESS.x0 - 0.3]) for (const z of [3.0, 4.4]) box(0.1, 2.4, 0.1, trimM, x, 1.2, z);
+    box(MW, 3, 0.2, wallM, MX, 1.5, Z0 - 0.1);
+    box(MW, 0.12, 0.24, woodM, MX, 0.06, Z0 - 0.02);
 
     // Outer walls on the far sides (back and left); the near sides stay open like a dollhouse.
     box(W, 3, 0.2, wallM, 0, 1.5, Z0 - 0.1);
@@ -227,7 +236,7 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
       box(r.x1 - r.x0 - 0.06, 0.02, r.z1 - r.z0 - 0.06, m, (r.x0 + r.x1) / 2, 0.0, (r.z0 + r.z1) / 2);
       floors.push({ m, day: r.floor, night: shade(r.floor, 0.32) });
       for (const s of ['front', 'back', 'left', 'right'] as const) side(r, s);
-      if (r.z0 <= Z0 + 0.01) box(1.6, 0.26, 0.04, mat(r.accent, 'catatan', r.accent), (r.x0 + r.x1) / 2, 2.75, Z0 + 0.03);
+      if (r.z0 <= Z0 + 0.01 && !r.key.startsWith('kamar')) box(1.6, 0.26, 0.04, mat(r.accent, 'catatan', r.accent), (r.x0 + r.x1) / 2, 2.75, Z0 + 0.03);
     }
 
     // Shared furniture helpers.
@@ -363,7 +372,38 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
     box(0.08, 1.0, 1.8, trimM, mk.x1 - 0.3, 1.7, 7.4);
     box(0.04, 0.86, 1.66, mat('#1b1330', 'layar', '#f2b134'), mk.x1 - 0.35, 1.7, 7.4);
     plant(mk.x1 - 0.5, mk.z1 - 0.5, 1.0);
-    for (const r of ROOMS) { const c = roomCenter(r); lampAt(c.x, c.z); }
+    for (const r of [...OFFICE_ROOMS, MESS_COMMON]) { const c = roomCenter(r); lampAt(c.x, c.z); }
+    for (const z of [-7.0, 0, 7.0]) lampAt(MESS_HALL, z);
+    // Mess common room: TV on the west wall, two sofas and stools facing it, fridge and a dining counter.
+    const mc = MESS_COMMON;
+    rug(16.3, 7.4, 2.6, 5.4, '#c26b3b');
+    box(0.08, 0.9, 1.6, trimM, mc.x0 + 0.08, 1.45, 7.4);
+    box(0.04, 0.78, 1.46, mat('#1b1330', 'layar', '#3a86ff'), mc.x0 + 0.13, 1.45, 7.4);
+    box(0.5, 0.5, 1.8, woodM, mc.x0 + 0.3, 0.25, 7.4);
+    sofa(16.3, 5.65, 2.2, Math.PI / 2);
+    sofa(16.3, 9.15, 2.2, Math.PI / 2);
+    for (const p of PLACES.mess.slice(6)) { add(cyl(0.24, 0.26, 0.45, mat('#f2b134', 'sofa')), p.x + 0.05, 0.22, p.z); }
+    box(0.7, 1.8, 0.62, mat('#dfe6ea', 'kertas'), mc.x1 - 0.5, 0.9, mc.z0 + 0.45);
+    plant(mc.x1 - 0.45, mc.z1 - 0.45, 0.9);
+    // Bedrooms: bed along the outer wall (pillow at the far end), blanket, nightstand + lamp, wardrobe, small desk.
+    const blankets = ['#3a86ff', '#e4572e', '#2a9d8f', '#8e6bd8', '#f2b134', '#ff5d8f', '#35b8a5', '#c26b3b', '#5b4a72'];
+    BEDROOMS.forEach((r, i) => {
+      const b = bedroomOf(i).bed;
+      const hd = b.headDir;
+      box(2.1, 0.32, 1.06, darkWoodM, b.x, 0.16, b.z);
+      box(2.0, 0.18, 1.0, whiteM, b.x, 0.41, b.z);
+      box(0.12, 0.75, 1.1, darkWoodM, b.x + hd * 1.05, 0.37, b.z);
+      box(0.4, 0.12, 0.7, mat('#f7f2ea', 'kertas'), b.x + hd * 0.72, 0.55, b.z);
+      box(1.2, 0.06, 1.04, mat(blankets[i % blankets.length]!, 'karpet'), b.x - hd * 0.35, 0.53, b.z);
+      const nx = b.x + hd * 0.75, nz = b.z + 0.85;
+      box(0.42, 0.48, 0.4, woodM, nx, 0.24, nz);
+      pendant.push(add(ball(0.11, mat('#fff3b0', 'lampu', '#000000')), nx, 0.62, nz));
+      box(1.0, 1.9, 0.5, woodM, hd < 0 ? r.x1 - 0.6 : r.x0 + 0.6, 0.95, r.z0 + 0.32);
+      box(0.9, 0.06, 0.5, mat('#c9a27c', 'meja'), b.x + hd * 0.4, 0.74, r.z1 - 0.35);
+      box(0.06, 0.72, 0.44, woodM, b.x + hd * 0.4 - 0.4, 0.36, r.z1 - 0.35);
+      box(0.06, 0.72, 0.44, woodM, b.x + hd * 0.4 + 0.4, 0.36, r.z1 - 0.35);
+      rug(b.x - hd * 0.1, b.z + 1.0, 1.4, 0.7, '#cdb4db');
+    });
 
     /* ================================================================== world (gaya paduan) & outside */
     let grassM: (Material & { color: Color }) | null = null;
@@ -382,7 +422,7 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
     kantor.position.y = naik;
     if (cinematic && !dunia.gantiLuar) {
       const L = K.luar;
-      const size = Math.max(L.ukuran, 46);
+      const size = Math.max(L.ukuran, 60);
       const grassMat = mat('#8cc672', 'tanah');
       grassM = grassMat;
       if (L.bentuk === 'bulat') add(cyl(size / 2, size / 2 + 0.3, 0.3, grassMat), 0, -0.8, 0, kantor);
@@ -398,7 +438,7 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
       const spots: [number, number, number, number][] = [
         [-15.5, -12.5, 1.4, 0], [-9, -13.2, 1.2, 1], [-2, -13.4, 1.5, 2], [5, -13.0, 1.2, 0], [11.5, -13.3, 1.4, 1], [15.8, -11, 1.2, 2],
         [-16, -6, 1.3, 1], [-16.2, 0, 1.1, 2], [-15.8, 6, 1.4, 0], [-15.5, 11.5, 1.2, 1], [-8, 13.6, 1.1, 2], [8, 13.6, 1.1, 0],
-        [16, -3, 1.2, 0], [16.2, 4, 1.3, 2], [15.6, 11.8, 1.1, 1],
+        [26, -8, 1.2, 0], [26.2, 1, 1.3, 2], [25.6, 9.8, 1.1, 1], [19, -13.2, 1.3, 1], [19, 13.4, 1.1, 2],
       ];
       for (const [x, z, s2, c] of spots) if (Math.abs(x) < size / 2 - 0.8 && Math.abs(z) < size / 2 - 0.8) tree(x, z, s2, c);
       const stoneM = mat('#d8cfc2', 'batu');
@@ -481,7 +521,7 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
     const reduce = !manual && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
     type Cam = { target: Vector3; yaw: number; pitch: number; zoom: number };
-    const HOME: Cam = { target: new Vector3(0.4, 0.6, 0.3), yaw: Math.PI / 4, pitch: 0.62, zoom: 0.96 };
+    const HOME: Cam = { target: new Vector3(K.dunia ? 0.4 : 5.4, 0.6, 0.3), yaw: Math.PI / 4, pitch: 0.62, zoom: 0.96 };
     const cam: Cam = { target: HOME.target.clone(), yaw: HOME.yaw, pitch: HOME.pitch, zoom: HOME.zoom };
     let anim: { from: Cam; to: Cam; t0: number; dur: number } | null = null;
     let following: Actor | null = null;
@@ -499,7 +539,7 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
       renderer.setSize(w, h, false);
       const aspect = w / h;
       // Show the whole campus: wide enough for a portrait phone, tall enough for a wide screen.
-      const span = K.dunia ? 9 * (dunia.lebar ?? 1) : aspect < 0.8 ? 17 : 15.5;
+      const span = K.dunia ? 9 * (dunia.lebar ?? 1) : aspect < 0.8 ? 21 : 19;
       halfW = Math.max(span * 0.62 * aspect, span);
       let halfH = halfW / aspect;
       if (halfH < span * 0.62) { halfH = span * 0.62; halfW = halfH * aspect; }
@@ -588,7 +628,7 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
     };
     const limitTarget = () => {
       const lim = K.dunia ? 8 : 15;
-      cam.target.x = clamp(cam.target.x, -lim, lim);
+      cam.target.x = clamp(cam.target.x, -lim, K.dunia ? lim : 25);
       cam.target.z = clamp(cam.target.z, -lim, lim);
     };
     const pan = (dx: number, dy: number) => {
@@ -673,7 +713,7 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
       }
       if (tour && !reduce && t >= tourNext) {
         // Guided tour: every room, then the people who are in the office.
-        const stops: ({ room: string } | { actor: Actor })[] = [...ROOMS.map((r) => ({ room: r.key })), ...actors.filter((a) => a.root.visible).map((a) => ({ actor: a }))];
+        const stops: ({ room: string } | { actor: Actor })[] = [...[...OFFICE_ROOMS, MESS_COMMON].map((r) => ({ room: r.key })), ...actors.filter((a) => a.root.visible).map((a) => ({ actor: a }))];
         const stop = stops[tourIndex++ % stops.length]!;
         if ('room' in stop) {
           following = null;
@@ -701,6 +741,10 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
     const goalFor = (a: Actor, spot: Spot): Goal => {
       if (spot === 'rumah') return { key: 'rumah', place: ENTRANCE_PLACE, pose: 'rumah' };
       if (spot === 'meja') return { key: 'meja', place: { x: a.seat.x, z: a.seat.z, rot: 0, via: deskVia(a.roomKey, a.seat.x, a.seat.z) }, pose: 'meja' };
+      if (spot === 'kamar' || spot === 'tidur') {
+        const b = bedroomOf(a.index);
+        return { key: spot, place: spot === 'tidur' ? b.sleep : b.sit, pose: spot };
+      }
       const list = PLACES[spot];
       const i = a.index % list.length;
       return { key: spot + i, place: list[i]!, pose: spot };
@@ -815,7 +859,7 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
           while (left > 0 && a.path.length) {
             const nx = a.path[0]!;
             const dx = nx.x - a.pos.x, dz = nx.z - a.pos.z, dist = Math.hypot(dx, dz);
-            if (dist > 1e-4) a.root.rotation.set(0, Math.atan2(-dx, -dz), 0);
+            if (dist > 1e-4) { a.root.rotation.order = 'XYZ'; a.root.rotation.set(0, Math.atan2(-dx, -dz), 0); }
             if (dist <= left) { a.pos.copy(nx); a.path.shift(); left -= dist; }
             else { a.pos.x += (dx / dist) * left; a.pos.z += (dz / dist) * left; left = 0; }
           }
@@ -824,6 +868,8 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
         const pose: Spot = walking ? 'meja' : goal.pose;
         a.root.visible = walking || pose !== 'rumah';
         a.root.position.set(a.pos.x, 0, a.pos.z);
+        a.root.rotation.order = 'XYZ';
+        a.body.scale.setScalar(K.agen.badan);
         if (!walking) a.root.rotation.set(0, goal.place.rot, 0);
         const atDesk = !walking && pose === 'meja';
         sm.emissive.set(!atDesk ? '#2a2340' : busy ? (act === 'laporan' ? '#7bdff2' : '#66e3a5') : act === 'menunggu' ? '#ffc94d' : act === 'kendala' ? '#ff5a6e' : act === 'belajar' ? '#ffd166' : '#5b4a92');
@@ -861,6 +907,37 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
           labelY(1.95);
           continue;
         }
+        if (pose === 'tidur') {
+          // Lying on the back along the bed, head on the pillow, breathing slowly.
+          standBase(a);
+          const b = bedroomOf(a.index).bed;
+          a.root.rotation.order = 'YXZ';
+          a.root.rotation.set(Math.PI / 2, b.headDir > 0 ? Math.PI / 2 : -Math.PI / 2, 0);
+          a.root.position.set(b.x - b.headDir * 0.85, 0.72, b.z);
+          a.armL.rotation.set(0, 0, 0.12);
+          a.armR.rotation.set(-0.5, 0, -0.3);
+          a.head.rotation.set(-0.15, 0, 0);
+          a.body.scale.y = K.agen.badan * (1 + (reduce ? 0 : 0.02 * Math.sin(t * 1.3 + a.phase)));
+          a.label.set(b.x, 1.25 + hk * 2, b.z);
+          continue;
+        }
+        if (pose === 'ngobrol') {
+          // Standing in a circle: the one speaking gestures, the others nod and look around.
+          standBase(a);
+          const talk = !!d?.talking && !reduce;
+          const g = Math.sin(t * 3.1 + a.phase);
+          if (talk) {
+            a.armR.rotation.set(-0.9 - 0.5 * Math.max(0, g), 0, -0.25 - 0.2 * g);
+            a.armL.rotation.set(-0.6 - 0.3 * Math.max(0, -g), 0, 0.25);
+            a.head.rotation.set(0.05 * Math.sin(t * 5), 0.25 * Math.sin(t * 0.8 + a.phase), 0);
+          } else {
+            a.armL.rotation.set(-0.15, 0, 0.12);
+            a.armR.rotation.set(-0.15, 0, -0.12);
+            a.head.rotation.set(0.08 * Math.max(0, Math.sin(t * 1.4 + a.phase)), 0.35 * Math.sin(t * 0.35 + a.phase), 0);
+          }
+          labelY(1.95);
+          continue;
+        }
         if (pose === 'musholla') {
           prayer(a, (t + a.phase * 3) % 24);
           labelY(a.root.position.y < -0.1 ? 1.35 : 1.95);
@@ -880,6 +957,25 @@ export default function OfficeScene({ desks, night, boardCount, anchors, roomAnc
           a.armR.rotation.set(-0.8 - 0.6 * Math.max(0, Math.sin(t * 0.9 + a.phase)), 0, -0.12);
           a.head.rotation.set(0, 0.55 * Math.sin(t * 0.25 + a.phase), 0);
           labelY(1.75);
+          continue;
+        }
+        if (pose === 'kamar') {
+          // Sitting on the bed edge with the phone.
+          a.root.position.y = -0.08;
+          a.armL.rotation.set(-1.25, 0, 0.35);
+          a.armR.rotation.set(-1.25, 0, -0.35);
+          a.head.rotation.set(0.45, 0.06 * Math.sin(t * 0.5 + a.phase), 0);
+          labelY(1.7);
+          continue;
+        }
+        if (pose === 'mess') {
+          const talk = !!d?.talking && !reduce;
+          a.root.position.y = -0.05;
+          a.body.rotation.set(0.12, 0, 0);
+          a.armL.rotation.set(-0.5, 0, 0.15);
+          a.armR.rotation.set(talk ? -1.1 - 0.4 * Math.max(0, Math.sin(t * 3 + a.phase)) : -0.55, 0, -0.15);
+          a.head.rotation.set(0.1, talk ? 0.4 * Math.sin(t * 0.9 + a.phase) : 0.15 * Math.sin(t * 0.3 + a.phase), 0);
+          labelY(1.7);
           continue;
         }
         if (pose === 'lounge') {

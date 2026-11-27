@@ -4,7 +4,12 @@ import { GAYA, TAMPIL_PEMILIH_GAYA } from './config';
 import { DAFTAR_GAYA, KUNCI_SIMPAN, cariGaya, gayaAwal, type GayaId } from './gaya/daftar';
 import { isNight, isoDay, lapseAt, params as readParams, plannedSpot, runtimeDoing, toMin, type DeskState, type RuntimeEntry, type Schedule } from './office';
 import { prayerTimes, fmtMin } from './prayer';
-import { ROOMS } from './layout';
+import { MESS_COMMON, OFFICE_ROOMS } from './layout';
+
+const PIN_ROOMS = [...OFFICE_ROOMS, MESS_COMMON];
+type Convo = { id: number; place: string; participants: string[]; topic: string | null; said: { sender: string; body: string; at: string }[] };
+const CONVO_SPOTS = new Set(['ngobrol', 'rapat', 'makan', 'mess', 'kopi', 'lounge']);
+const OFF_DUTY = new Set(['tidur', 'kamar', 'mess', 'rumah']);
 import type { OfficeControls } from './OfficeScene';
 import type { RoomKey } from './config';
 import CommandCenter, { type Focus } from './cc/CommandCenter';
@@ -28,6 +33,7 @@ export default function App() {
   const [open, setOpen] = useState<string | null>(null);
   const [agentsOpen, setAgentsOpen] = useState(() => window.innerWidth > 900);
   const [office, setOffice] = useState<Record<string, RuntimeEntry>>({});
+  const [convos, setConvos] = useState<Convo[]>([]);
   const [authed, setAuthed] = useState(false);
   const [ccOpen, setCcOpen] = useState(() => new URLSearchParams(location.search).has('social'));
   const [focus, setFocus] = useState<Focus>(null);
@@ -60,7 +66,7 @@ export default function App() {
     const load = async () => {
       try {
         const r = await fetch(authed ? '/api/office' : '/api/office/public', { credentials: 'same-origin' });
-        if (r.ok && alive) setOffice((await r.json()).state || {});
+        if (r.ok && alive) { const j = await r.json(); setOffice(j.state || {}); setConvos(j.conversations || []); }
       } catch { /* offline: keep last state */ }
     };
     void load();
@@ -88,24 +94,32 @@ export default function App() {
   const desks = useMemo(() => PERSONNEL.map((person): DeskState => {
     const e = office[person.key];
     const plan = plannedSpot(person.key, (person as { schedule?: Schedule }).schedule, minute, day, pt);
-    // Real work always wins: someone with a running task, waiting for you or stuck is at the desk.
-    const busy = e && e.state !== 'available';
+    // Real work wins: a running task is always done at the desk (overtime at night); waiting/stuck only pulls
+    // someone to the desk while they are on duty — after hours the "!" stays on their tag until morning.
+    const busy = !!e && (e.state === 'working' || (e.state !== 'available' && !OFF_DUTY.has(plan.spot)));
     const doing = busy
-      ? { ...runtimeDoing(e), label: (plan.spot === 'rumah' ? 'lembur: ' : '') + runtimeDoing(e).label }
+      ? { ...runtimeDoing(e), label: (OFF_DUTY.has(plan.spot) ? 'lembur: ' : '') + runtimeDoing(e).label }
       : plan.spot === 'rumah' ? { activity: 'pulang' as const, label: plan.label }
       : plan.spot === 'meja' ? { ...runtimeDoing(e), label: plan.label === 'siap menerima perintah' ? runtimeDoing(e).label : plan.label }
       : { activity: 'siaga' as const, label: plan.label };
-    const spot = busy ? 'meja' : plan.spot;
+    // A conversation going on right now (work talk or chit-chat) gathers its participants at its place.
+    const convo = convos.find((c) => c.participants.includes(person.key));
+    const joins = !busy && convo && CONVO_SPOTS.has(convo.place) && plan.spot !== 'tidur';
+    const spot = busy ? 'meja' : joins ? (convo.place as DeskState['spot'])! : plan.spot;
+    const mine = convo?.said.filter((m) => m.sender === person.key).at(-1);
+    const age = mine ? (now.getTime() - new Date(mine.at).getTime()) / 1000 : Infinity;
     return {
-      doing,
+      doing: joins ? { activity: 'siaga' as const, label: convo.place === 'rapat' ? 'diskusi di ruang rapat' : 'ngobrol' } : doing,
       spot,
+      talking: age < 20,
+      say: age < 45 ? mine!.body : null,
       desk: { key: person.key, room: ROOM[person.room] ?? 'studio', color: person.color, x: person.desk.x, z: person.desk.z },
       agen: { key: person.key, nama: person.name, tugas: person.summary, ruang: ROOM[person.room] ?? 'studio', warna: person.color, x: person.desk.x, z: person.desk.z },
       bubble: e?.title ?? null,
       waiting: e?.state === 'waiting' ? [e.title || 'Menunggu keputusan'] : [],
       urgent: e?.state === 'blocked' ? [e.title || 'Perlu dicek'] : [],
     };
-  }), [office, minute, day, pt]);
+  }), [office, convos, minute, day, pt, now]);
   const night = isNight(time);
   const count = (s: string) => PERSONNEL.filter((x) => (office[x.key]?.state ?? 'available') === s).length;
   const waitingList = PERSONNEL.filter((x) => office[x.key]?.state === 'waiting' || office[x.key]?.state === 'blocked');
@@ -128,7 +142,7 @@ export default function App() {
             <Tag key={d.desk.key} d={d} refFn={(el) => (el ? anchors.current.set(d.desk.key, el) : anchors.current.delete(d.desk.key))} onOpen={() => look(d.desk.key)} />
           ))}
           <span className="ko-board-pin" ref={(el) => void (boardAnchor.current = el)}>Mission Board</span>
-          {ROOMS.map((r) => <button type="button" key={r.key} className="ko-room-pin" onClick={() => cam.current?.focusRoom(r.key)} ref={(el) => { if (el) roomAnchors.current.set(r.key, el); else roomAnchors.current.delete(r.key); }}>{ROOM_ICON[r.key] ?? ''} {r.label}</button>)}
+          {PIN_ROOMS.map((r) => <button type="button" key={r.key} className="ko-room-pin" onClick={() => cam.current?.focusRoom(r.key)} ref={(el) => { if (el) roomAnchors.current.set(r.key, el); else roomAnchors.current.delete(r.key); }}>{ROOM_ICON[r.key] ?? ''} {r.label}</button>)}
         </div>
       </div>
 
@@ -149,7 +163,7 @@ export default function App() {
 
       <section className={`ko-panel ko-panel-agents ${agentsOpen ? '' : 'is-collapsed'}`} aria-label="Personnel">
         <div className="ko-panel-head">
-          <div><span className="ko-eyebrow">TIM</span><h2>Personnel</h2><p>{count('working')} bekerja · {count('waiting')} menunggu kamu · {desks.filter((d) => d.spot !== 'rumah').length} di kantor</p></div>
+          <div><span className="ko-eyebrow">TIM</span><h2>Personnel</h2><p>{count('working')} bekerja · {count('waiting')} menunggu kamu · {desks.filter((d) => !OFF_DUTY.has(d.spot ?? 'meja')).length} di kantor · {desks.filter((d) => d.spot === 'tidur').length} tidur</p></div>
           <button className="ko-icon-btn" type="button" onClick={() => setAgentsOpen((v) => !v)} aria-label={agentsOpen ? 'Ciutkan' : 'Buka'}>{agentsOpen ? '−' : '+'}</button>
         </div>
         {agentsOpen && <div className="ko-person-list">
@@ -159,7 +173,7 @@ export default function App() {
             return <button className="ko-person" type="button" key={x.key} onClick={() => look(x.key)}>
               <span className="ko-avatar" style={{ '--agent': x.color } as React.CSSProperties}>{x.name.slice(0, 1)}</span>
               <span className="ko-person-copy"><b>{x.name}</b><small>{x.role}</small><em>{e?.title ? d.label + ' · ' + e.title : d.label}</em></span>
-              <i className="ko-presence" data-state={desks.find((d) => d.desk.key === x.key)?.spot === 'rumah' && (e?.state ?? 'available') === 'available' ? 'away' : e?.state ?? 'available'} />
+              <i className="ko-presence" data-state={OFF_DUTY.has(desks.find((d) => d.desk.key === x.key)?.spot ?? 'meja') && (e?.state ?? 'available') === 'available' ? 'away' : e?.state ?? 'available'} />
             </button>;
           })}
         </div>}
@@ -171,7 +185,7 @@ export default function App() {
 
       {!p.rec && <nav className="ko-cam" aria-label="Kamera">
         <button type="button" className={!camState.zoomed && !camState.following && !camState.tour ? 'on' : ''} onClick={() => cam.current?.overview()}>🏢 Semua</button>
-        {ROOMS.map((r) => <button type="button" key={r.key} onClick={() => cam.current?.focusRoom(r.key)}>{ROOM_ICON[r.key]} {ROOM_SHORT[r.key] ?? r.label}</button>)}
+        {PIN_ROOMS.map((r) => <button type="button" key={r.key} onClick={() => cam.current?.focusRoom(r.key)}>{ROOM_ICON[r.key]} {ROOM_SHORT[r.key] ?? r.label}</button>)}
         <button type="button" className={camState.tour ? 'on' : ''} onClick={() => cam.current?.setTour(!camState.tour)}>🎥 Tur</button>
       </nav>}
       {camState.following && <p className="ko-following">Mengikuti {PERSONNEL.find((x) => x.key === camState.following)?.name} · geser layar untuk berhenti</p>}
@@ -203,8 +217,8 @@ export default function App() {
   );
 }
 
-const ROOM_SHORT: Record<string, string> = { creative: 'Creative', direksi: 'Direksi', webdev: 'Web Dev', musholla: 'Musholla', atrium: 'Lounge', rapat: 'Rapat', pantry: 'Pantry', lobby: 'Lobby', marketing: 'Marketing' };
-const ROOM_ICON: Record<string, string> = { creative: '🎨', direksi: '👔', webdev: '💻', musholla: '🕌', atrium: '🛋️', rapat: '🗓️', pantry: '☕', lobby: '🚪', marketing: '📈' };
+const ROOM_SHORT: Record<string, string> = { creative: 'Creative', direksi: 'Direksi', webdev: 'Web Dev', musholla: 'Musholla', atrium: 'Lounge', rapat: 'Rapat', pantry: 'Pantry', lobby: 'Lobby', marketing: 'Marketing', mess: 'Mess' };
+const ROOM_ICON: Record<string, string> = { creative: '🎨', direksi: '👔', webdev: '💻', musholla: '🕌', atrium: '🛋️', rapat: '🗓️', pantry: '☕', lobby: '🚪', marketing: '📈', mess: '🛏️' };
 
 function nextPrayer(pt: Record<string, number>, minute: number) {
   const next = Object.entries(pt).find(([, m]) => m >= minute);
@@ -216,7 +230,7 @@ function Tag({ d, refFn, onOpen }: { d: DeskState; refFn: (el: HTMLElement | nul
   const think = a === 'kerja' ? '</>' : a === 'menunggu' ? '🙋' : a === 'kendala' ? '!?' : null;
   return <div className="ko-tag" ref={refFn} data-act={a} data-spot={d.spot ?? 'meja'} style={{ ['--agent' as string]: d.desk.color }}>
     <div className="ko-tag-in">
-      {think && <span className="ko-think">{think}</span>}
+      {d.say ? <span className="ko-say">{d.say}</span> : think && <span className="ko-think">{think}</span>}
       <div className="ko-tag-row"><button type="button" className="ko-name" onClick={onOpen}><span className="ko-dot" />{d.agen.nama}<span className="ko-name-act">{d.doing.label}</span></button>
         {d.waiting.length > 0 && <button type="button" className="ko-bang" onClick={onOpen} aria-label="Menunggu keputusan">!</button>}
         {d.urgent.length > 0 && <span className="ko-urgent">!</span>}

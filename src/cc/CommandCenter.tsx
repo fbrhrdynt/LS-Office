@@ -15,7 +15,7 @@ export default function CommandCenter({ open, onClose, focus, onAuth, onUnread }
   const [error, setError] = useState('');
   const [tab, setTab] = useState<Tab>('inbox');
   const [taskId, setTaskId] = useState<string | null>(null);
-  const [thread, setThread] = useState('alex');
+  const [thread, setThread] = useState('grup');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [notes, setNotes] = useState<Notification[]>([]);

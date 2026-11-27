@@ -59,6 +59,8 @@ Biaya yang tampil di aplikasi adalah **estimasi** dari tarif publik; tagihan res
 Di Telegram: tombol Approve / Ide 1–5 / Revisi / Tolak / Posting sekarang / Ulangi; video dikirim langsung untuk review.
 Revisi: tekan ✏️ lalu balas dengan teksnya. Perintah: `/status`, `/video <brief>`, `/web <brief>`, `/tugas @nama <instruksi>`.
 Pesan biasa → Alex; `@nadia ...` → chat ke karyawan tertentu.
+Grup Kantor: `/grup` = 12 pesan terakhir, `/grup <pesan>` = tulis ke grup (tim menjawab), `/grup on|off` = teruskan
+obrolan grup ke Telegram (default off supaya tidak berisik). Obrolan otomatis dibatasi `SOCIAL_MAX_PER_DAY` / `SOCIAL_GAP_MIN` di `api.env`.
 
 ## Akun sosial (OAuth)
 

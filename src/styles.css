@@ -941,3 +941,22 @@ body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
   .ko-tag .ko-name-act { display: none; }
   .ko-tag .ko-name { font-size: 11px; padding: 3px 8px; }
 }
+
+/* speech bubble: the latest line someone said in a conversation */
+.ko-say {
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: 12px 12px 12px 4px;
+  background: #fff;
+  color: #271b3f;
+  font: 500 0.75rem/1.35 Inter, system-ui, sans-serif;
+  box-shadow: 0 3px 12px rgb(27 19 48 / 0.22);
+  border: 1.5px solid var(--agent, #271b3f);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  animation: ko-say-in 0.25s ease-out;
+}
+@keyframes ko-say-in { from { opacity: 0; transform: translateY(4px) scale(0.96); } }
+.ko-tag[data-spot='tidur'] .ko-name { opacity: 0.72; }
