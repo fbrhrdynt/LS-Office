@@ -55,7 +55,7 @@ Setiap part:
   ▶ Daren QA ──▶ [KAMU review video / revisi] ▶ Olivier caption "Part N" + jadwal ──▶ [KAMU setujui posting]
   ▶ saat kamu setujui posting Part N, Part N+1 otomatis mulai diproduksi (bisa dijeda di Studio → Seri cerita)
 ```
-Mulai dari Command Center → `+ Perintah baru` → **🎞️ Cerita bersambung**, Telegram `/cerita <brief>`, atau chat ke Alex.
+Mulai dari Command Center → `+ Perintah baru` → **🎞️ Cerita bersambung** (pilih durasi per part: ±1/±2/±3 menit), Telegram `/cerita <brief>`, atau chat ke Alex.
 
 ### Website baru / update website
 ```
@@ -114,6 +114,7 @@ Aturan kerja: kembangkan di branch/worktree terpisah dan database dev (salinan d
 
 | Tanggal | Perubahan |
 |---|---|
+| 2026-11-27 | Pilihan durasi ±1 / ±2 / ±3 menit untuk Video pendek dan Cerita bersambung (per part). Panjang naskah, jumlah adegan, dan validasi mengikuti durasi; caption cerita tetap 4 kata. Perkiraan per part: 2 menit ±$1–1,5, 3 menit ±$2–2,5 + ±2.600 karakter ElevenLabs, render ±7–9 menit. |
 | 2026-11-27 | Perbaikan dari Part 1 "Rumah Waris": suara seri baru dikunci setelah audio berhasil dibuat; istilah kamera (close up, shot, dll.) tidak pernah dibacakan; naskah cerita bergaya realistis (bukan dongeng); pesan error ElevenLabs (paket gratis/kuota) jelas dan bisa ditindaklanjuti. |
 | 2026-11-27 | Suara Indonesia diprioritaskan: bila akun ElevenLabs punya suara berbahasa Indonesia (saat ini Putra, Yudo, Bram, Indah), Maya hanya memilih dari suara-suara itu. |
 | 2026-11-27 | Suara pakai ElevenLabs (`eleven_multilingual_v2`): Maya memilih dari suara yang ada di akun, satu suara dikunci per seri, timing caption langsung dari ElevenLabs (tanpa Whisper). Tanpa `ELEVENLABS_API_KEY` otomatis kembali ke OpenAI TTS. |

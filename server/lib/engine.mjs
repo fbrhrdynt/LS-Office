@@ -1,7 +1,7 @@
 import { tx } from './db.mjs';
 import { config } from './config.mjs';
 import { respond } from './ai.mjs';
-import { WORKFLOWS, COORDINATOR, GATE_LABEL, stepDef, STORY_EPISODE_WORKFLOW } from '../workflows.mjs';
+import { WORKFLOWS, COORDINATOR, GATE_LABEL, stepDef, STORY_EPISODE_WORKFLOW, durationTarget } from '../workflows.mjs';
 
 export const TASK_TYPES = ['text', 'animated_video', 'web_build', 'web_update', 'story_series', 'story_episode'];
 const PRIORITY_ORDER = "CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END";
@@ -33,6 +33,7 @@ export async function createTask(pool, input) {
   }
   if (Array.isArray(input.platforms)) meta.platforms = input.platforms.filter((p) => ['tiktok', 'instagram', 'youtube', 'facebook'].includes(p));
   if (input.source) meta.source = String(input.source).slice(0, 20);
+  if ([1, 2, 3].includes(Number(input.durationMin))) meta.durationMin = Number(input.durationMin);
   return tx(pool, async (c) => {
     const a = await c.query("SELECT id FROM employees WHERE id=$1 AND active AND id<>'alex'", [assigneeId]);
     if (!a.rowCount) throw Object.assign(new Error('Invalid assignee'), { status: 400 });
@@ -205,6 +206,10 @@ export async function workContext(pool, job) {
   const meta = job.meta || {};
   if (meta.affiliate) parts.push('Produk affiliate: ' + [meta.affiliate.product, meta.affiliate.link, meta.affiliate.notes].filter(Boolean).join(' · '));
   if (meta.platforms?.length) parts.push('Platform target: ' + meta.platforms.join(', '));
+  if (['animated_video', 'story_series', 'story_episode'].includes(job.task_type)) {
+    const d = durationTarget(job.task_type, meta);
+    parts.push('TARGET DURASI: ' + d.label + (job.task_type === 'story_series' ? ' per part' : '') + ' (narasi ' + d.words[0] + '-' + d.words[1] + ' kata, ' + d.scenes[0] + '-' + d.scenes[1] + ' adegan)');
+  }
   if (job.project_id) {
     const p = await pool.query('SELECT name,slug,repo_url,default_branch,notes FROM dev_projects WHERE id=$1', [job.project_id]);
     if (p.rowCount) parts.push('Proyek: ' + p.rows[0].name + ' (' + p.rows[0].slug + ')' + (p.rows[0].notes ? '\nCatatan proyek: ' + p.rows[0].notes : ''));

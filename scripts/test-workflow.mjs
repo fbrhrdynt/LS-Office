@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { runnerImport } from 'vite';
-import { VIDEO_WORKFLOW, WEB_BUILD_WORKFLOW, WEB_UPDATE_WORKFLOW, STORY_SERIES_WORKFLOW, STORY_EPISODE_WORKFLOW, SCHEMAS, stepDef } from '../server/workflows.mjs';
+import { VIDEO_WORKFLOW, WEB_BUILD_WORKFLOW, WEB_UPDATE_WORKFLOW, STORY_SERIES_WORKFLOW, STORY_EPISODE_WORKFLOW, SCHEMAS, stepDef, durationTarget } from '../server/workflows.mjs';
 import { buildPublishPlan, parseLocal } from '../server/lib/engine.mjs';
 import { cleanNarration, alignWords, spokenText, evenWords, hasCues, friendlyVoiceError } from '../server/video/produce.mjs';
 import { formatOutput } from '../server/lib/format.mjs';
@@ -76,6 +76,14 @@ t('ElevenLabs character timing becomes word timing', () => {
   const words = alignmentToWords({ characters: c, character_start_times_seconds: c.map((_, i) => i * 0.05), character_end_times_seconds: c.map((_, i) => i * 0.05 + 0.05) });
   assert.deepEqual(words.map((w) => w.word), ['Gaji', 'Dina', 'habis,', 'cuma', 'lima', 'puluh', 'ribu.']);
   assert.ok(words.every((w, i) => w.end > w.start && (i === 0 || w.start >= words[i - 1].end)));
+});
+t('duration choice drives words and scenes', () => {
+  assert.equal(durationTarget('animated_video', {}).min, 1);
+  assert.equal(durationTarget('story_episode', {}).min, 2);
+  const three = durationTarget('story_episode', { durationMin: 3 });
+  assert.deepEqual([three.min, three.words, three.scenes], [3, [315, 435], [14, 22]]);
+  assert.equal(durationTarget('story_episode', { durationMin: 9 }).min, 2);
+  assert.ok(STORY_EPISODE_WORKFLOW[0].instruction.includes('TARGET DURASI'));
 });
 t('voice errors are explained in Indonesian', () => {
   assert.match(friendlyVoiceError(new Error('ElevenLabs: Free users cannot use library voices via the API.'), 'Indah'), /Upgrade paket ElevenLabs/);

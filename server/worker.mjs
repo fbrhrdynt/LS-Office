@@ -6,7 +6,7 @@ import { respond, listElevenVoices, narrationVoices } from './lib/ai.mjs';
 import { workContext } from './lib/engine.mjs';
 import { answerNextMessage } from './lib/chat.mjs';
 import { config } from './lib/config.mjs';
-import { SCHEMAS, stepDef } from './workflows.mjs';
+import { SCHEMAS, stepDef, durationTarget } from './workflows.mjs';
 import { formatOutput } from './lib/format.mjs';
 import { hasCues } from './video/produce.mjs';
 
@@ -71,13 +71,14 @@ async function validate(pool, job, json) {
     const total = json.scenes.reduce((n, x) => n + words(x.spoken), 0);
     const bad = json.scenes.map((x, i) => (hasCues(x.spoken) || /[()[\]]/.test(x.spoken) ? i + 1 : 0)).filter(Boolean);
     if (bad.length) return 'Adegan ' + bad.join(', ') + ' masih berisi arahan/label/tanda kurung di field spoken. Pindahkan ke visual_note.';
-    const story = job.task_type === 'story_episode';
-    const [lo, hi, label] = story ? [165, 290, '180-260 supaya part 1,5-2 menit'] : [80, 150, '95-135 supaya video 45-60 detik'];
-    if (total < lo || total > hi) return 'Total kata yang diucapkan ' + total + '; harus ' + label + '.';
-    if (json.scenes.length < (story ? 6 : 3)) return 'Adegan terlalu sedikit.';
+    const d = durationTarget(job.task_type, job.meta);
+    const [lo, hi] = [Math.round(d.words[0] * 0.9), Math.round(d.words[1] * 1.1)];
+    if (total < lo || total > hi) return 'Total kata yang diucapkan ' + total + '; harus ' + d.words[0] + '-' + d.words[1] + ' supaya durasinya ' + d.label + '.';
+    if (json.scenes.length < Math.max(3, d.scenes[0] - 2)) return 'Adegan terlalu sedikit untuk durasi ' + d.label + '.';
   }
   if (key === 'storyboard') {
-    if (!(json.scenes?.length >= 3 && json.scenes.length <= 18)) return 'Storyboard harus 4-16 adegan';
+    const d = durationTarget(job.task_type, job.meta);
+    if (!(json.scenes?.length >= 3 && json.scenes.length <= d.scenes[1] + 4)) return 'Storyboard untuk ' + d.label + ' butuh ' + d.scenes[0] + '-' + d.scenes[1] + ' adegan';
     const bad = json.scenes.map((x, i) => (hasCues(x.narration) || /[()[\]]/.test(x.narration) ? i + 1 : 0)).filter(Boolean);
     if (bad.length) return 'Narasi adegan ' + bad.join(', ') + ' berisi arahan/label. Narasi hanya kata yang diucapkan.';
     for (const [i, x] of json.scenes.entries()) {
@@ -117,7 +118,7 @@ async function qaVideo(job, { pool }) {
     ['Stream video H.264', v?.codec_name === 'h264'],
     ['Stream audio AAC', a?.codec_name === 'aac'],
     ['Resolusi ' + config.videoWidth + 'x' + config.videoHeight, v?.width === config.videoWidth && v?.height === config.videoHeight],
-    ['Durasi 15-180 detik', duration >= 15 && duration <= 180],
+    ['Durasi 15-240 detik', duration >= 15 && duration <= 240],
   ];
   const lines = checks.map(([label, ok]) => (ok ? '✓ ' : '✗ ') + label);
   if (checks.some(([, ok]) => !ok)) throw new Error('QA gagal:\n' + lines.join('\n'));

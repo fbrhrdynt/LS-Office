@@ -16,6 +16,7 @@ export default function NewTask({ employees, projects, onCreated }: { employees:
   const [assignee, setAssignee] = useState('nadia');
   const [projectId, setProjectId] = useState('');
   const [priority, setPriority] = useState('normal');
+  const [durationMin, setDurationMin] = useState(2);
   const [platforms, setPlatforms] = useState<string[]>(['tiktok', 'instagram']);
   const [affProduct, setAffProduct] = useState('');
   const [affLink, setAffLink] = useState('');
@@ -26,7 +27,7 @@ export default function NewTask({ employees, projects, onCreated }: { employees:
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setError('');
     try {
-      const r = await api<{ task: { id: string } }>('/tasks', { json: { taskType: type, title: title.trim() || instruction.trim().split(/[.\n]/)[0]!.slice(0, 120), instruction, assigneeId: assignee, priority, projectId: projectId || undefined, platforms: ['animated_video', 'story_series'].includes(type) ? platforms : undefined, affiliate: ['animated_video', 'story_series'].includes(type) && (affProduct || affLink) ? { product: affProduct, link: affLink } : undefined } });
+      const r = await api<{ task: { id: string } }>('/tasks', { json: { taskType: type, title: title.trim() || instruction.trim().split(/[.\n]/)[0]!.slice(0, 120), instruction, assigneeId: assignee, priority, projectId: projectId || undefined, platforms: ['animated_video', 'story_series'].includes(type) ? platforms : undefined, durationMin: ['animated_video', 'story_series'].includes(type) ? durationMin : undefined, affiliate: ['animated_video', 'story_series'].includes(type) && (affProduct || affLink) ? { product: affProduct, link: affLink } : undefined } });
       setTitle(''); setInstruction(''); setAffProduct(''); setAffLink('');
       onCreated(r.task.id);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
@@ -41,6 +42,7 @@ export default function NewTask({ employees, projects, onCreated }: { employees:
       <label className="lc-field">Judul (opsional)<input maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={type === 'animated_video' ? 'mis. Fakta unik las bawah air' : 'mis. Landing page katalog'} /></label>
       <label className="lc-field">{type === 'animated_video' ? 'Mau video seperti apa?' : type === 'story_series' ? 'Cerita seperti apa?' : 'Instruksi'}<textarea required rows={4} maxLength={12000} value={instruction} onChange={(e) => setInstruction(e.target.value)} placeholder={type === 'story_series' ? 'Contoh: drama keluarga sehari-hari, anak sulung yang jadi tulang punggung keluarga, 6 part, tiap part ada layar chat WA/saldo, ending bikin penasaran.' : type === 'animated_video' ? 'Contoh: video edukasi ala akun knowledge di TikTok, topik teknik/sains yang bikin penasaran, gaya animasi 3D, caption tebal per kata.' : 'Tuliskan yang kamu mau…'} /></label>
       {['animated_video', 'story_series'].includes(type) && <>
+        <label className="lc-field">{type === 'story_series' ? 'Durasi per part' : 'Durasi video'}<select value={durationMin} onChange={(e) => setDurationMin(Number(e.target.value))}><option value={1}>± 1 menit</option><option value={2}>± 2 menit</option><option value={3}>± 3 menit</option></select><small>Makin panjang, makin banyak adegan: biaya dan waktu render naik (± 3 menit ≈ 2× biaya 2 menit).</small></label>
         <div className="lc-field">Posting ke<div className="lc-row">{['tiktok', 'instagram', 'youtube', 'facebook'].map((p) => <label key={p} className="lc-check"><input type="checkbox" checked={platforms.includes(p)} onChange={(e) => setPlatforms((x) => (e.target.checked ? [...x, p] : x.filter((y) => y !== p)))} /> {p}</label>)}</div></div>
         <details className="lc-brief"><summary>🛒 Produk affiliate (opsional)</summary>
           <label className="lc-field">Produk<input value={affProduct} onChange={(e) => setAffProduct(e.target.value)} placeholder="mis. Sarung tangan las isolasi" /></label>
