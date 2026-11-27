@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { runnerImport } from 'vite';
 import { VIDEO_WORKFLOW, WEB_BUILD_WORKFLOW, WEB_UPDATE_WORKFLOW, STORY_SERIES_WORKFLOW, STORY_EPISODE_WORKFLOW, SCHEMAS, stepDef, durationTarget } from '../server/workflows.mjs';
 import { buildPublishPlan, parseLocal } from '../server/lib/engine.mjs';
-import { cleanNarration, alignWords, spokenText, evenWords, hasCues, friendlyVoiceError } from '../server/video/produce.mjs';
+import { cleanNarration, alignWords, spokenText, evenWords, hasCues, friendlyVoiceError, deliveryTags, mixArgs } from '../server/video/produce.mjs';
 import { formatOutput } from '../server/lib/format.mjs';
 import { alignmentToWords, narrationVoices } from '../server/lib/ai.mjs';
 
@@ -84,6 +84,22 @@ t('duration choice drives words and scenes', () => {
   assert.deepEqual([three.min, three.words, three.scenes], [3, [315, 435], [14, 22]]);
   assert.equal(durationTarget('story_episode', { durationMin: 9 }).min, 2);
   assert.ok(STORY_EPISODE_WORKFLOW[0].instruction.includes('TARGET DURASI'));
+});
+t('emotion tags shape the voice but never reach captions', () => {
+  assert.equal(deliveryTags('[whispers] pelan [sad][slowly] <x> [a] [b] [c]'), '[whispers] [sad] [slowly]');
+  const text = '[whispers] Lewat tengah malam. [nervous] Pelan.';
+  const c = [...text];
+  const words = alignmentToWords({ characters: c, character_start_times_seconds: c.map((_, i) => i * 0.05), character_end_times_seconds: c.map((_, i) => i * 0.05 + 0.05) });
+  assert.deepEqual(words.map((w) => w.word), ['Lewat', 'tengah', 'malam.', 'Pelan.']);
+});
+t('soundtrack mix: music ducked under the voice, ambience and effects placed in time', () => {
+  const args = mixArgs({ narration: 'n.mp3', music: 'm.mp3', ambience: [{ file: 'a.mp3', start: 2, dur: 5 }], sfx: [{ file: 's.mp3', at: 3.15 }], total: 30, out: 'o.mp3' });
+  const graph = args[args.indexOf('-filter_complex') + 1];
+  assert.match(graph, /sidechaincompress/);
+  assert.match(graph, /adelay=2000\|2000/);
+  assert.match(graph, /adelay=3150\|3150/);
+  assert.match(graph, /amix=inputs=4/);
+  assert.ok(!mixArgs({ narration: 'n.mp3', music: null, ambience: [], sfx: [], total: 5, out: 'o.mp3' }).join(' ').includes('sidechain'));
 });
 t('voice errors are explained in Indonesian', () => {
   assert.match(friendlyVoiceError(new Error('ElevenLabs: Free users cannot use library voices via the API.'), 'Indah'), /Upgrade paket ElevenLabs/);

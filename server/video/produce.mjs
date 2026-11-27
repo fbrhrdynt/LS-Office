@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import http from 'node:http';
 import path from 'node:path';
 import { config } from '../lib/config.mjs';
-import { generateImage, editImage, speak, recordSpeech, transcribeWords, speakEleven, listElevenVoices, narrationVoices } from '../lib/ai.mjs';
+import { generateImage, editImage, speak, recordSpeech, transcribeWords, speakEleven, listElevenVoices, narrationVoices, soundEffect, composeMusic } from '../lib/ai.mjs';
 import { isStopped } from '../lib/engine.mjs';
 
 const exec = promisify(execFile);
@@ -59,6 +59,88 @@ export function friendlyVoiceError(e, voice) {
   if (/free users cannot use library voices/i.test(m)) return 'Suara "' + (voice || '?') + '" adalah suara Voice Library: paket ElevenLabs gratis tidak boleh memakainya lewat API. Upgrade paket ElevenLabs, atau pakai suara milik sendiri/bawaan. (' + m.slice(0, 200) + ')';
   if (/quota|credits|insufficient/i.test(m)) return 'Kuota karakter ElevenLabs habis. Tambah kuota/upgrade paket lalu klik Ulangi. (' + m.slice(0, 200) + ')';
   return m;
+}
+
+/** Keeps only well-formed audio tags ([whispers] [sad] ...), at most three. */
+export function deliveryTags(value) {
+  return (String(value || '').match(/\[[a-zA-Z][a-zA-Z \-]{1,30}\]/g) || []).slice(0, 3).join(' ');
+}
+
+/**
+ * Builds mix.mp3 next to the narration. Every element is optional: a failure is noted and skipped, and a missing
+ * permission on the ElevenLabs key stops further sound calls instead of failing the video.
+ */
+async function soundDesign({ audio, scenes, total, work, cache, narration, ctx, notes }) {
+  let denied = false;
+  const get = async (key, make) => {
+    if (denied) return null;
+    const file = path.join(cache, key + '.mp3');
+    if (await exists(file)) return file;
+    try {
+      await writeFile(file + '.tmp', await make());
+      await rename(file + '.tmp', file);
+      return file;
+    } catch (e) {
+      if (e.status === 401 || e.status === 403) { denied = true; notes.push('API key ElevenLabs belum diberi izin Sound Effects/Music'); }
+      else notes.push(String(e.message).slice(0, 120));
+      return null;
+    }
+  };
+  const music = audio.music_prompt?.trim() ? await get('music-' + sha(audio.music_prompt + '|' + Math.ceil(total / 10)), () => composeMusic({ prompt: audio.music_prompt + '. Instrumental background score for a spoken story, no vocals, leaves room for narration.', ms: (total + 2) * 1000, ctx })) : null;
+  const ambience = [];
+  const sfx = [];
+  for (const [i, s] of scenes.entries()) {
+    const plan = audio.scenes?.find((x) => Number(x.scene) === i + 1);
+    const dur = s.end - s.start;
+    if (plan?.ambience?.trim() && dur >= 1) {
+      const file = await get('amb-' + sha(plan.ambience + '|' + Math.min(30, Math.ceil(dur))), () => soundEffect({ text: plan.ambience, seconds: Math.min(30, Math.ceil(dur)), loop: true, ctx }));
+      if (file) ambience.push({ file, start: s.start, dur });
+    }
+    if (plan?.sfx?.trim()) {
+      const file = await get('sfx-' + sha(plan.sfx), () => soundEffect({ text: plan.sfx, ctx }));
+      if (file) sfx.push({ file, at: s.start + 0.15 });
+    }
+  }
+  if (!music && !ambience.length && !sfx.length) return false;
+  await run('ffmpeg', mixArgs({ narration, music, ambience, sfx, total, out: path.join(work, 'mix.mp3') }));
+  return true;
+}
+
+/** ffmpeg arguments for the final soundtrack: voice on top, music ducked under it, ambience and effects placed in time. */
+export function mixArgs({ narration, music, ambience, sfx, total, out }) {
+  const args = ['-y', '-i', narration];
+  const fmt = 'aformat=sample_rates=44100:channel_layouts=stereo';
+  const chains = [];
+  const mixIn = [];
+  let n = 1;
+  if (music) {
+    args.push('-stream_loop', '-1', '-i', music);
+    chains.push(`[0:a]${fmt},apad=whole_dur=${total.toFixed(2)},asplit=2[nar][key]`);
+    chains.push(`[${n}:a]${fmt},atrim=0:${total.toFixed(2)},afade=t=in:d=1.5,afade=t=out:st=${Math.max(0, total - 2.5).toFixed(2)}:d=2.5,volume=0.32[mus]`);
+    chains.push('[mus][key]sidechaincompress=threshold=0.025:ratio=10:attack=15:release=450[duck]');
+    mixIn.push('[nar]', '[duck]');
+    n++;
+  } else {
+    chains.push(`[0:a]${fmt},apad=whole_dur=${total.toFixed(2)}[nar]`);
+    mixIn.push('[nar]');
+  }
+  for (const [i, a] of ambience.entries()) {
+    args.push('-stream_loop', '-1', '-i', a.file);
+    const ms = Math.round(a.start * 1000);
+    chains.push(`[${n}:a]${fmt},atrim=0:${a.dur.toFixed(2)},afade=t=in:d=0.6,afade=t=out:st=${Math.max(0, a.dur - 0.8).toFixed(2)}:d=0.8,volume=0.28,adelay=${ms}|${ms}[amb${i}]`);
+    mixIn.push(`[amb${i}]`);
+    n++;
+  }
+  for (const [i, s] of sfx.entries()) {
+    args.push('-i', s.file);
+    const ms = Math.round(s.at * 1000);
+    chains.push(`[${n}:a]${fmt},volume=0.75,adelay=${ms}|${ms}[sfx${i}]`);
+    mixIn.push(`[sfx${i}]`);
+    n++;
+  }
+  chains.push(`${mixIn.join('')}amix=inputs=${mixIn.length}:duration=first:normalize=0,alimiter=limit=0.95[out]`);
+  args.push('-filter_complex', chains.join(';'), '-map', '[out]', '-t', total.toFixed(2), '-c:a', 'libmp3lame', '-b:a', '192k', out);
+  return args;
 }
 
 /** Caption words: the script's own spelling when the transcript has the same word count, else the transcript. */
@@ -178,7 +260,12 @@ export async function produceVideo(job, { pool, signal }) {
     await pool.query('UPDATE series SET voice_id=$2,voice_name=$3,updated_at=now() WHERE id=$1 AND voice_id IS NULL', [series.id, voiceId, voiceName]);
   }
   const voiceKey = eleven ? 'eleven|' + config.elevenModel + '|' + voiceId + '|' + config.elevenSpeed : audio.voice + '|' + audio.instructions + '|' + config.ttsModel;
-  const said = board.scenes.map((scene) => spokenText(scene.narration, audio.pronunciations));
+  const tagged = eleven && /v3/.test(config.elevenModel);
+  const said = board.scenes.map((scene, i) => {
+    const text = spokenText(scene.narration, audio.pronunciations);
+    const tags = tagged ? deliveryTags(audio.scenes?.find((x) => Number(x.scene) === i + 1)?.delivery_tags) : '';
+    return tags ? tags + ' ' + text : text;
+  });
   const clips = await pool2(board.scenes, eleven ? 2 : 3, async (scene, i) => {
     const file = path.join(cache, 'vo-' + sha(voiceKey + '|' + said[i]) + '.mp3');
     const timing = file.replace(/\.mp3$/, '.words.json');
@@ -222,6 +309,14 @@ export async function produceVideo(job, { pool, signal }) {
     t = end + gap;
   }
   const total = scenes.at(-1).end;
+
+  // 4b. Sound design: music bed (ducked under the voice), per-scene ambience and one-shot effects.
+  let audioName = 'narration.mp3';
+  const soundNotes = [];
+  if (eleven && config.soundDesign && !(await isStopped(pool, job.id))) {
+    const mixed = await soundDesign({ audio, scenes, total, work, cache, narration, ctx, notes: soundNotes });
+    if (mixed) audioName = 'mix.mp3';
+  }
   if (await isStopped(pool, job.id)) throw new Error('Task dibatalkan');
 
   // 5. Render with Remotion (bundle built at deploy time).
@@ -236,7 +331,7 @@ export async function produceVideo(job, { pool, signal }) {
   try {
     const inputProps = {
       template: board.template, fps: config.videoFps, width: config.videoWidth, height: config.videoHeight,
-      hookText: board.template === 'story' ? '' : board.hook_text || '', audio: base + 'narration.mp3', duration: total,
+      hookText: board.template === 'story' ? '' : board.hook_text || '', audio: base + audioName, duration: total,
       partLabel: job.part_no ? 'PART ' + job.part_no : '', mainName: series?.plan?.characters?.[0]?.name || '', endLabel: series ? (job.part_no < series.total_parts ? 'Bersambung ke Part ' + (job.part_no + 1) : 'Tamat') : '',
       scenes: scenes.map((s) => ({ ...s, image: s.image ? base + s.image : null })), words,
     };
@@ -261,6 +356,7 @@ export async function produceVideo(job, { pool, signal }) {
     'Judul: ' + board.title,
     'Template: ' + board.template + ' · ' + board.scenes.length + ' adegan · ' + total.toFixed(1) + ' detik',
     'Suara: ' + (eleven ? 'ElevenLabs · ' + (series?.voice_name || audio.voice) : 'OpenAI · ' + audio.voice),
+    'Sound design: ' + (audioName === 'mix.mp3' ? 'musik/ambience/efek aktif' : 'tidak ada') + (soundNotes.length ? ' (' + soundNotes.join('; ') + ')' : ''),
     'Waktu render: ' + Math.round((Date.now() - started) / 1000) + ' detik',
   ].join('\n');
   return { text, artifact: { path: out, mime: 'video/mp4', name } };

@@ -140,7 +140,11 @@ export function alignmentToWords(alignment) {
   const ends = alignment?.character_end_times_seconds || [];
   const words = [];
   let cur = null;
+  let inTag = false;
   chars.forEach((ch, i) => {
+    // Audio tags ([whispers], [sighs] ...) are spoken directions, not caption words.
+    if (ch === '[') { inTag = true; if (cur) { words.push(cur); cur = null; } return; }
+    if (inTag) { if (ch === ']') inTag = false; return; }
     if (/\s/.test(ch)) { if (cur) { words.push(cur); cur = null; } return; }
     if (!cur) cur = { word: '', start: Number(starts[i] ?? 0), end: Number(ends[i] ?? 0) };
     cur.word += ch;
@@ -153,14 +157,14 @@ export function alignmentToWords(alignment) {
 /** ElevenLabs speech with timing. Returns { bytes (mp3), words }. */
 export async function speakEleven({ text, voiceId, previousText = '', nextText = '', ctx = null }) {
   if (!config.elevenKey) throw new Error('ELEVENLABS_API_KEY belum diisi');
-  const body = {
-    text: text.slice(0, 5000),
-    model_id: config.elevenModel,
-    voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.3, use_speaker_boost: true, speed: config.elevenSpeed },
-    apply_text_normalization: 'auto',
-  };
-  if (previousText) body.previous_text = previousText.slice(-1000);
-  if (nextText) body.next_text = nextText.slice(0, 1000);
+  const v3 = /v3/.test(config.elevenModel);
+  const body = { text: text.slice(0, 5000), model_id: config.elevenModel, apply_text_normalization: 'auto' };
+  if (!v3) {
+    // v2 models: steady settings and neighbouring text for continuity. v3 is driven by audio tags in the text instead.
+    body.voice_settings = { stability: 0.45, similarity_boost: 0.8, style: 0.3, use_speaker_boost: true, speed: config.elevenSpeed };
+    if (previousText) body.previous_text = previousText.slice(-1000);
+    if (nextText) body.next_text = nextText.slice(0, 1000);
+  }
   const r = await fetch(ELEVEN + '/v1/text-to-speech/' + encodeURIComponent(voiceId) + '/with-timestamps?output_format=mp3_44100_128', {
     method: 'POST', signal: AbortSignal.timeout(180000), headers: { 'xi-api-key': config.elevenKey, 'content-type': 'application/json' }, body: JSON.stringify(body),
   });
@@ -171,6 +175,35 @@ export async function speakEleven({ text, voiceId, previousText = '', nextText =
   }
   await record(ctx, 'tts', 'elevenlabs:' + config.elevenModel, { chars: body.text.length, voiceId }, (body.text.length / 1000) * config.elevenUsdPer1kChars);
   return { bytes: Buffer.from(d.audio_base64, 'base64'), words: alignmentToWords(d.alignment || d.normalized_alignment) };
+}
+
+async function elevenBinary(endpoint, body, label, timeoutMs = 240000) {
+  const r = await fetch(ELEVEN + endpoint, { method: 'POST', signal: AbortSignal.timeout(timeoutMs), headers: { 'xi-api-key': config.elevenKey, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) {
+    const d = await r.json().catch(() => null);
+    const detail = d?.detail;
+    throw Object.assign(new Error(label + ': ' + (typeof detail === 'string' ? detail : detail?.message || detail?.[0]?.msg || 'HTTP ' + r.status)), { status: r.status });
+  }
+  return Buffer.from(await r.arrayBuffer());
+}
+
+/** Sound effect or ambience from a text description (ElevenLabs). */
+export async function soundEffect({ text, seconds = null, loop = false, ctx = null }) {
+  const body = { text: text.slice(0, 450), model_id: 'eleven_text_to_sound_v2', prompt_influence: 0.45, loop };
+  if (seconds) body.duration_seconds = Math.max(0.5, Math.min(30, seconds));
+  const bytes = await elevenBinary('/v1/sound-generation?output_format=mp3_44100_128', body, 'ElevenLabs SFX');
+  await record(ctx, 'sfx', 'elevenlabs:sound', { text: body.text.slice(0, 80), seconds: body.duration_seconds || null }, 0);
+  return bytes;
+}
+
+/** Instrumental background music (ElevenLabs Music). */
+export async function composeMusic({ prompt, ms, ctx = null }) {
+  const body = { prompt: prompt.slice(0, 1500), music_length_ms: Math.max(10000, Math.min(600000, Math.round(ms))), force_instrumental: true, model_id: 'music_v2' };
+  let bytes;
+  try { bytes = await elevenBinary('/v1/music?output_format=mp3_44100_128', body, 'ElevenLabs Music', 420000); }
+  catch (e) { if (e.status === 400 || e.status === 422) bytes = await elevenBinary('/v1/music?output_format=mp3_44100_128', { ...body, model_id: 'music_v1' }, 'ElevenLabs Music', 420000); else throw e; }
+  await record(ctx, 'music', 'elevenlabs:music', { ms: body.music_length_ms }, 0);
+  return bytes;
 }
 
 /** Word-level timestamps for an audio file: [{ word, start, end }] in seconds. */

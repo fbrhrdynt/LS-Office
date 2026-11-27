@@ -50,7 +50,8 @@ Nadia riset tema + 3-5 ide seri (arc per part) ──▶ [KAMU pilih]
   ▶ Ethan desain tokoh & lokasi ─▶ seri tercipta, Part 1 otomatis masuk produksi
 Setiap part:
   Felix naskah (ingat part sebelumnya, ditutup cliffhanger) ▶ Ethan storyboard
-  ▶ Maya memilih suara dari akun ElevenLabs → suara itu DIKUNCI untuk semua part seri
+  ▶ Maya: suara (DIKUNCI untuk semua part seri) + emosi per adegan ([whispers], [sad], [sighs]…) + sound design
+    (musik latar, ambience per adegan, efek suara di momen penting)
   ▶ engine: character sheet seri (dibuat sekali) dipakai sebagai referensi SETIAP gambar → tokoh konsisten
   ▶ Daren QA ──▶ [KAMU review video / revisi] ▶ Olivier caption "Part N" + jadwal ──▶ [KAMU setujui posting]
   ▶ saat kamu setujui posting Part N, Part N+1 otomatis mulai diproduksi (bisa dijeda di Studio → Seri cerita)
@@ -114,6 +115,7 @@ Aturan kerja: kembangkan di branch/worktree terpisah dan database dev (salinan d
 
 | Tanggal | Perubahan |
 |---|---|
+| 2026-11-27 | Narasi emosional + sound design: model suara `eleven_v3` dengan tag emosi per adegan dari Maya; musik instrumental (ElevenLabs Music) yang otomatis mengecil saat narator bicara, ambience per adegan, dan efek suara (ElevenLabs Sound Effects), di-mix dengan FFmpeg. Butuh izin **Sound Effects** dan **Music Generation** di API key ElevenLabs; tanpa izin, video tetap jadi dengan narasi emosional saja. Matikan dengan `SOUND_DESIGN=off`. |
 | 2026-11-27 | Pilihan durasi ±1 / ±2 / ±3 menit untuk Video pendek dan Cerita bersambung (per part). Panjang naskah, jumlah adegan, dan validasi mengikuti durasi; caption cerita tetap 4 kata. Perkiraan per part: 2 menit ±$1–1,5, 3 menit ±$2–2,5 + ±2.600 karakter ElevenLabs, render ±7–9 menit. |
 | 2026-11-27 | Perbaikan dari Part 1 "Rumah Waris": suara seri baru dikunci setelah audio berhasil dibuat; istilah kamera (close up, shot, dll.) tidak pernah dibacakan; naskah cerita bergaya realistis (bukan dongeng); pesan error ElevenLabs (paket gratis/kuota) jelas dan bisa ditindaklanjuti. |
 | 2026-11-27 | Suara Indonesia diprioritaskan: bila akun ElevenLabs punya suara berbahasa Indonesia (saat ini Putra, Yudo, Bram, Indah), Maya hanya memilih dari suara-suara itu. |

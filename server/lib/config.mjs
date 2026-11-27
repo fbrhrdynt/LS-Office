@@ -38,7 +38,10 @@ export const config = {
   // Voice: ElevenLabs when a key is configured (better Indonesian narration, one fixed voice per series), else OpenAI.
   ttsProvider: env.TTS_PROVIDER || (env.ELEVENLABS_API_KEY ? 'elevenlabs' : 'openai'),
   elevenKey: env.ELEVENLABS_API_KEY || '',
-  elevenModel: env.ELEVENLABS_MODEL || 'eleven_multilingual_v2',
+  // eleven_v3: expressive narration with audio tags ([whispers], [sighs] ...). Override to eleven_multilingual_v2 for a flatter, steadier read.
+  elevenModel: env.ELEVENLABS_MODEL || 'eleven_v3',
+  // Music, ambience and sound effects (needs Sound Effects + Music Generation access on the ElevenLabs key).
+  soundDesign: env.SOUND_DESIGN !== 'off',
   elevenVoiceId: env.ELEVENLABS_VOICE_ID || '',
   elevenSpeed: num(env.ELEVENLABS_SPEED, 1.05),
   // ElevenLabs bills a character quota from your plan; set a per-1k-character price only if you want it in the budget.
