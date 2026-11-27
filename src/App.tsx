@@ -4,7 +4,8 @@ import { GAYA, TAMPIL_PEMILIH_GAYA } from './config';
 import { DAFTAR_GAYA, KUNCI_SIMPAN, cariGaya, gayaAwal, type GayaId } from './gaya/daftar';
 import { isNight, isoDay, lapseAt, params as readParams, plannedSpot, runtimeDoing, toMin, type DeskState, type RuntimeEntry, type Schedule } from './office';
 import { prayerTimes, fmtMin } from './prayer';
-import { ROOM_LABELS } from './layout';
+import { ROOMS } from './layout';
+import type { OfficeControls } from './OfficeScene';
 import type { RoomKey } from './config';
 import CommandCenter, { type Focus } from './cc/CommandCenter';
 import PERSONNEL_DATA from '../shared/personnel.json';
@@ -35,6 +36,10 @@ export default function App() {
   const anchors = useRef(new Map<string, HTMLElement>());
   const boardAnchor = useRef<HTMLElement | null>(null);
   const roomAnchors = useRef(new Map<string, HTMLElement>());
+  const cam = useRef<OfficeControls | null>(null);
+  const [camState, setCamState] = useState<{ following: string | null; tour: boolean; zoomed: boolean }>({ following: null, tour: false, zoomed: false });
+  const onCamera = useCallback((s: { following: string | null; tour: boolean; zoomed: boolean }) => setCamState(s), []);
+  const look = useCallback((key: string) => { setOpen(key); cam.current?.focusPerson(key); }, []);
   const [gaya, setGaya] = useState<GayaId>(() => {
     let simpanan: string | null = null;
     try { simpanan = localStorage.getItem(KUNCI_SIMPAN); } catch { /* storage blocked */ }
@@ -115,15 +120,15 @@ export default function App() {
     <main className="ko" data-night={night || !!g.malam || undefined} data-gaya={gaya} style={latar ? { background: latar } : undefined}>
       <div className="ko-stage">
         <Suspense fallback={<div className="ko-loading">Menyiapkan kantor…</div>}>
-          <OfficeScene desks={desks} night={night} boardCount={Math.min(waitingList.length, 8)} anchors={anchors} roomAnchors={roomAnchors} boardAnchor={boardAnchor} cinematic manual={p.rec} drive={drive} gaya={gaya} />
+          <OfficeScene desks={desks} night={night} boardCount={Math.min(waitingList.length, 8)} anchors={anchors} roomAnchors={roomAnchors} boardAnchor={boardAnchor} controls={cam} onCamera={onCamera} cinematic manual={p.rec} drive={drive} gaya={gaya} />
         </Suspense>
         {g.tiltShift && <div className="ko-tilt" aria-hidden="true" />}
         <div className="ko-layer">
           {desks.map((d) => (
-            <Tag key={d.desk.key} d={d} refFn={(el) => (el ? anchors.current.set(d.desk.key, el) : anchors.current.delete(d.desk.key))} onOpen={() => setOpen(d.desk.key)} />
+            <Tag key={d.desk.key} d={d} refFn={(el) => (el ? anchors.current.set(d.desk.key, el) : anchors.current.delete(d.desk.key))} onOpen={() => look(d.desk.key)} />
           ))}
           <span className="ko-board-pin" ref={(el) => void (boardAnchor.current = el)}>Mission Board</span>
-          {ROOM_LABELS.map((r) => <span key={r.key} className="ko-room-pin" ref={(el) => { if (el) roomAnchors.current.set(r.key, el); else roomAnchors.current.delete(r.key); }}>{r.label}</span>)}
+          {ROOMS.map((r) => <button type="button" key={r.key} className="ko-room-pin" onClick={() => cam.current?.focusRoom(r.key)} ref={(el) => { if (el) roomAnchors.current.set(r.key, el); else roomAnchors.current.delete(r.key); }}>{ROOM_ICON[r.key] ?? ''} {r.label}</button>)}
         </div>
       </div>
 
@@ -151,7 +156,7 @@ export default function App() {
           {PERSONNEL.map((x) => {
             const e = office[x.key];
             const d = desks.find((k) => k.desk.key === x.key)!.doing;
-            return <button className="ko-person" type="button" key={x.key} onClick={() => setOpen(x.key)}>
+            return <button className="ko-person" type="button" key={x.key} onClick={() => look(x.key)}>
               <span className="ko-avatar" style={{ '--agent': x.color } as React.CSSProperties}>{x.name.slice(0, 1)}</span>
               <span className="ko-person-copy"><b>{x.name}</b><small>{x.role}</small><em>{e?.title ? d.label + ' · ' + e.title : d.label}</em></span>
               <i className="ko-presence" data-state={desks.find((d) => d.desk.key === x.key)?.spot === 'rumah' && (e?.state ?? 'available') === 'available' ? 'away' : e?.state ?? 'available'} />
@@ -163,6 +168,13 @@ export default function App() {
           {waitingList.map((x) => <button key={x.key} type="button" onClick={() => openCC(office[x.key]?.taskId ? { task: office[x.key]!.taskId } : { tab: 'inbox' })}>{office[x.key]?.state === 'blocked' ? '⚠️' : '🙋'} {x.name}: {office[x.key]?.title || 'butuh keputusan'}</button>)}
         </div>}
       </section>
+
+      {!p.rec && <nav className="ko-cam" aria-label="Kamera">
+        <button type="button" className={!camState.zoomed && !camState.following && !camState.tour ? 'on' : ''} onClick={() => cam.current?.overview()}>🏢 Semua</button>
+        {ROOMS.map((r) => <button type="button" key={r.key} onClick={() => cam.current?.focusRoom(r.key)}>{ROOM_ICON[r.key]} {ROOM_SHORT[r.key] ?? r.label}</button>)}
+        <button type="button" className={camState.tour ? 'on' : ''} onClick={() => cam.current?.setTour(!camState.tour)}>🎥 Tur</button>
+      </nav>}
+      {camState.following && <p className="ko-following">Mengikuti {PERSONNEL.find((x) => x.key === camState.following)?.name} · geser layar untuk berhenti</p>}
 
       {lapse && (!p.rec || lapse.inAct < 3) && <p key={lapse.act} className="ko-act">{lapse.title}</p>}
 
@@ -179,6 +191,7 @@ export default function App() {
           <p>Sekarang: <b>{runtimeDoing(entry).label}</b>{entry?.title ? <> — {entry.title}</> : null}</p>
           <div className="ko-sheet-actions">
             {authed && entry?.taskId && <button type="button" onClick={() => openCC({ task: entry.taskId })}>Buka task</button>}
+            <button type="button" onClick={() => { cam.current?.focusPerson(person.key); setOpen(null); }}>🎯 Ikuti dengan kamera</button>
             <button type="button" onClick={() => openCC({ chat: person.key })}>💬 Chat dengan {person.name}</button>
             <button type="button" className="ghost" onClick={() => setOpen(null)}>Tutup</button>
           </div>
@@ -189,6 +202,9 @@ export default function App() {
     </main>
   );
 }
+
+const ROOM_SHORT: Record<string, string> = { creative: 'Creative', direksi: 'Direksi', webdev: 'Web Dev', musholla: 'Musholla', atrium: 'Lounge', rapat: 'Rapat', pantry: 'Pantry', lobby: 'Lobby', marketing: 'Marketing' };
+const ROOM_ICON: Record<string, string> = { creative: '🎨', direksi: '👔', webdev: '💻', musholla: '🕌', atrium: '🛋️', rapat: '🗓️', pantry: '☕', lobby: '🚪', marketing: '📈' };
 
 function nextPrayer(pt: Record<string, number>, minute: number) {
   const next = Object.entries(pt).find(([, m]) => m >= minute);

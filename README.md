@@ -23,11 +23,17 @@ Buka https://office.febro.id → **⌘ Command Center** → login. Atau lewat **
 | **Studio** | seri cerita (progres per part, jeda/lanjut, produksi part berikutnya), akun sosial, jadwal posting, proyek web |
 | **Pengaturan** | hubungkan Telegram, biaya AI harian (estimasi) |
 
-Kantor 3D punya ruang kerja Creative, Marketing, Web Dev, plus **musholla, pantry & kopi, ruang rapat, lounge**, dan pintu
-masuk. Tiap karyawan punya jadwal sendiri (`shared/personnel.json` → `schedule`): jam datang/pulang berbeda, rapat pagi
-tim, ngopi, makan siang, istirahat sore, dan **sholat Dzuhur/Ashar/Maghrib** sesuai jadwal sholat Jakarta yang dihitung
-otomatis (parameter Kemenag). Mereka berjalan lewat koridor ke tempat tujuan. Pekerjaan asli selalu menang: karyawan yang
-sedang mengerjakan task / menunggu keputusanmu / kendala tetap di mejanya (di luar jam kerja tertulis "lembur").
+Kantor 3D berbentuk **kampus 3×3 ruangan** (`src/layout.ts`): Creative Studio · Ruang Direksi · Web Dev (belakang),
+Musholla · Atrium & Lounge (Mission Board) · Ruang Rapat (tengah), Pantry & Kopi · Lobby (pintu masuk) · Marketing &
+Analytics (depan), dihubungkan koridor. Tiap karyawan punya jadwal sendiri (`shared/personnel.json` → `schedule`): jam
+datang/pulang, rapat pagi, ngopi, makan siang, istirahat, dan **sholat Dzuhur/Ashar/Maghrib** sesuai jadwal sholat
+Jakarta (dihitung otomatis). Mereka berjalan lewat pintu dan koridor. Pekerjaan asli selalu menang (task / menunggu
+keputusanmu / kendala ⇒ di meja; di luar jam kerja tertulis "lembur").
+
+**Kamera:** geser 1 jari / drag = pindah, **pinch / scroll = zoom ke titik**, 2 jari memutar / klik kanan / shift+drag =
+putar, ketuk dua kali = lihat semua. Klik nama karyawan = kamera terbang & **mengikuti** dia; bar bawah = lompat ke
+ruangan; 🎥 Tur = keliling otomatis.
+
 Status di meja: ⌨️ mengetik = sedang mengerjakan tahapnya, 🙋 angkat tangan = menunggu keputusanmu,
 ⚠️ memegang kepala = gagal/perlu dicek, ☕ santai di meja = siap menerima perintah. Klik karyawan → buka task / chat.
 
@@ -120,6 +126,7 @@ Aturan kerja: kembangkan di branch/worktree terpisah dan database dev (salinan d
 
 | Tanggal | Perubahan |
 |---|---|
+| 2026-11-27 | Kantor jadi kampus 3×3 (9 ruangan dengan pintu & koridor, bukan memanjang) + kamera baru: pan, pinch/scroll zoom ke titik, putar, fokus & ikuti karyawan, lompat ruangan, tur opsional. Gaya `gedung30` menampilkan kampus diperkecil (sebagian tertutup lantai gedung). |
 | 2026-11-27 | Kantor 3D realistis: sayap musholla + pantry & kopi dan ruang rapat + lounge, pintu masuk; jadwal harian per karyawan (datang, rapat pagi, ngopi, makan siang, sholat sesuai jadwal sholat Jakarta, istirahat, pulang) dengan jalan bertujuan lewat koridor dan pose sholat/makan/rapat/santai; label ruangan; jadwal sholat berikutnya di HUD. Status kerja asli tetap prioritas. |
 | 2026-11-27 | Ganti suara seri: tulis nama suara di revisi (mis. "ganti suara ke Yudo") atau pilih di Studio → Seri cerita → Suara narator. Sebelumnya suara terkunci ke pilihan pertama dan revisi suara diabaikan. |
 | 2026-11-27 | Narasi emosional + sound design: model suara `eleven_v3` dengan tag emosi per adegan dari Maya; musik instrumental (ElevenLabs Music) yang otomatis mengecil saat narator bicara, ambience per adegan, dan efek suara (ElevenLabs Sound Effects), di-mix dengan FFmpeg. Butuh izin **Sound Effects** dan **Music Generation** di API key ElevenLabs; tanpa izin, video tetap jadi dengan narasi emosional saja. Matikan dengan `SOUND_DESIGN=off`. |

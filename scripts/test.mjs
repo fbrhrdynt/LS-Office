@@ -72,6 +72,21 @@ t('hari kerja nyata: datang, rapat, sholat, makan, ngopi, pulang', () => {
   assert.equal(at('10:00', 6), 'rumah');
   assert.equal(O.plannedSpot('felix', { ...s, prays: false }, 700 + 8, 4, pt).spot, 'meja');
 });
+const LY = (await runnerImport(path.join(root, 'src/layout.ts'), { root, configFile: false, cacheDir: path.join(os.tmpdir(), 'kantor-vite'), logLevel: 'error' })).module;
+t('denah kampus: 9 ruangan, jalan lewat pintu & koridor', () => {
+  assert.equal(LY.ROOMS.length, 9);
+  const inside = (r, [x, z]) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1;
+  const onHall = ([x, z]) => LY.HALL_Z.some((h) => Math.abs(z - h) < 0.05) || LY.HALL_X.some((h) => Math.abs(x - h) < 0.05);
+  // Musholla -> pantry: leaves through the musholla door, ends at the pantry place, every corner reachable in straight lines.
+  const from = LY.PLACES.musholla[0], to = LY.PLACES.makan[0];
+  const pts = LY.route(from, to);
+  assert.deepEqual(pts.at(-1), [to.x, to.z]);
+  const m = LY.roomByKey('musholla'), door = LY.doorPoints(m);
+  assert.ok(pts.some((p) => p[0] === door.wall[0] && p[1] === door.wall[1]), 'lewat pintu musholla');
+  for (let i = 1; i < pts.length; i++) assert.ok(pts[i][0] === pts[i - 1][0] || pts[i][1] === pts[i - 1][1] || inside(LY.roomByKey('pantry'), pts[i]) || inside(m, pts[i - 1]), 'segmen lurus');
+  assert.ok(LY.corridorPath([-8.8, -3.7], [8.8, 3.7]).every(onHall));
+  assert.deepEqual(LY.route(LY.ENTRANCE_PLACE, LY.PLACES.lounge[0]).at(-1), [LY.PLACES.lounge[0].x, LY.PLACES.lounge[0].z]);
+});
 const G = (await runnerImport(path.join(root, 'src/gaya/daftar.ts'), { root, configFile: false, cacheDir: path.join(os.tmpdir(), 'kantor-vite'), logLevel: 'error' })).module;
 t('16 gaya + asli, urutan pilihan gaya', () => {
   assert.equal(G.DAFTAR_GAYA.length, 17);

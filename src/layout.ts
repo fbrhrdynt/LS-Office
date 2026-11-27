@@ -1,59 +1,133 @@
 /**
- * Denah kantor (meter, koordinat lokal scene). Ruang kerja (Creative / Marketing / Web Dev) di tengah x -7..7,
- * sayap kiri: musholla (belakang) + pantry & kopi (depan), sayap kanan: ruang rapat (belakang) + lounge (depan).
- * Koridor memanjang di z = CORRIDOR; pintu masuk di ujung kanan.
+ * Denah kantor: kampus 3 x 3 ruangan (meter, koordinat lokal scene; -z = belakang, +x = kanan).
+ *
+ *   belakang:  Creative Studio | Ruang Direksi      | Web Dev
+ *   tengah:    Musholla        | Atrium & Lounge    | Ruang Rapat
+ *   depan:     Pantry & Kopi   | Lobby (pintu masuk)| Marketing & Analytics
+ *
+ * Koridor: dua lorong melintang (z = ±3.7) dan dua lorong membujur (x = ±4.4) membentuk cincin di sekeliling atrium.
+ * Fungsi di sini murni (dites di scripts/test.mjs).
  */
 import type { Spot } from './office';
 
-export const BOUNDS = { x0: -12.6, x1: 12.6, z0: -3.5, z1: 3 };
-export const CORRIDOR = 0.05;
-export const ENTRANCE = { x: 13.6, z: CORRIDOR };
-/** Partisi ruang belakang di sayap (z), dengan pintu di tengah. */
-export const BACK_WALL_Z = -0.6;
+export const BOUNDS = { x0: -12.5, x1: 12.5, z0: -10.4, z1: 10.4 };
+const COLS: [number, number][] = [[-12.5, -5.1], [-3.7, 3.7], [5.1, 12.5]];
+const ROWS: [number, number][] = [[-10.4, -4.4], [-3.0, 3.0], [4.4, 10.4]];
+export const HALL_Z = [-3.7, 3.7];
+export const HALL_X = [-4.4, 4.4];
+export const ENTRANCE = { x: 0, z: 12.2 };
 
-export interface Place {
-  /** Titik berdiri/duduk. */
-  x: number;
-  z: number;
-  /** Arah hadap (radian, rotasi y; 0 = menghadap -z). */
-  rot: number;
-  /** Titik-titik dari tempat ini menuju koridor (tanpa titik awal). */
-  via: [number, number][];
+export type DoorSide = 'front' | 'back' | 'left' | 'right' | 'open';
+export interface Room {
+  key: string;
+  label: string;
+  x0: number; x1: number; z0: number; z1: number;
+  floor: string;
+  accent: string;
+  /** Wall with the door (towards a corridor); 'open' = no walls (atrium). */
+  door: DoorSide;
+  /** Door centre along that wall. */
+  doorAt: number;
+  /** Wall kind: solid low partition or glass. */
+  glass?: boolean;
 }
 
-const door = (dx: number): [number, number][] => [[dx, BACK_WALL_Z - 0.55], [dx, CORRIDOR]];
+const room = (key: string, label: string, c: number, r: number, floor: string, accent: string, door: DoorSide, doorAt: number, glass = false): Room =>
+  ({ key, label, x0: COLS[c]![0], x1: COLS[c]![1], z0: ROWS[r]![0], z1: ROWS[r]![1], floor, accent, door, doorAt, glass });
 
-/** Tempat untuk tiap aktivitas di luar meja, dipilih per karyawan (indeks % jumlah tempat). */
+export const ROOMS: Room[] = [
+  room('creative', 'Creative Studio', 0, 0, '#efe2d0', '#e4572e', 'front', -8.8),
+  room('direksi', 'Ruang Direksi', 1, 0, '#e8e0d6', '#271b3f', 'front', 0, true),
+  room('webdev', 'Web Dev', 2, 0, '#e3dde9', '#3a86ff', 'front', 8.8),
+  room('musholla', 'Musholla', 0, 1, '#dfe9d8', '#2f7d5b', 'right', 0),
+  room('atrium', 'Atrium & Lounge', 1, 1, '#f3ece2', '#f2b134', 'open', 0),
+  room('rapat', 'Ruang Rapat', 2, 1, '#e6e1ee', '#8e6bd8', 'left', 0, true),
+  room('pantry', 'Pantry & Kopi', 0, 2, '#f1e4cf', '#c26b3b', 'back', -8.8),
+  room('lobby', 'Lobby', 1, 2, '#f4efe8', '#35b8a5', 'back', 0),
+  room('marketing', 'Marketing & Analytics', 2, 2, '#efe3cf', '#35b8a5', 'back', 8.8),
+];
+export const roomByKey = (key: string) => ROOMS.find((r) => r.key === key)!;
+export const roomCenter = (r: Room) => ({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2 });
+
+/** Door point on the wall and the matching point in the corridor outside it. */
+export function doorPoints(r: Room): { wall: [number, number]; hall: [number, number]; inside: [number, number] } {
+  if (r.door === 'front') return { wall: [r.doorAt, r.z1], hall: [r.doorAt, HALL_Z[0]!], inside: [r.doorAt, r.z1 - 0.9] };
+  if (r.door === 'back') return { wall: [r.doorAt, r.z0], hall: [r.doorAt, HALL_Z[1]!], inside: [r.doorAt, r.z0 + 0.9] };
+  if (r.door === 'right') return { wall: [r.x1, r.doorAt], hall: [HALL_X[0]!, r.doorAt], inside: [r.x1 - 0.9, r.doorAt] };
+  if (r.door === 'left') return { wall: [r.x0, r.doorAt], hall: [HALL_X[1]!, r.doorAt], inside: [r.x0 + 0.9, r.doorAt] };
+  return { wall: [roomCenter(r).x, r.z1], hall: [roomCenter(r).x, HALL_Z[1]!], inside: [roomCenter(r).x, r.z1 - 0.5] };
+}
+
+/** Exit path from a point inside a room to the corridor: aisle -> inside the door -> door -> corridor. */
+export function exitVia(roomKey: string, x: number, z: number): [number, number][] {
+  const r = roomByKey(roomKey);
+  const d = doorPoints(r);
+  if (r.door === 'open') return [[x, d.hall[1]]];
+  const horizontalDoor = r.door === 'front' || r.door === 'back';
+  const aisle: [number, number] = horizontalDoor ? [d.inside[0], z] : [x, d.inside[1]];
+  return [aisle, d.inside, d.wall, d.hall];
+}
+
+/* ---------- corridor routing (rectangle ring around the atrium + four arms) ---------- */
+
+const onHallZ = (p: [number, number]) => HALL_Z.some((z) => Math.abs(p[1] - z) < 0.05);
+const onHallX = (p: [number, number]) => HALL_X.some((x) => Math.abs(p[0] - x) < 0.05);
+const NODES: [number, number][] = HALL_X.flatMap((x) => HALL_Z.map((z) => [x, z] as [number, number]));
+
+/** Shortest corridor path between two corridor points (Manhattan along corridor lines via the 4 crossings). */
+export function corridorPath(a: [number, number], b: [number, number]): [number, number][] {
+  const same = (onHallZ(a) && onHallZ(b) && Math.abs(a[1] - b[1]) < 0.05) || (onHallX(a) && onHallX(b) && Math.abs(a[0] - b[0]) < 0.05);
+  if (same) return [b];
+  const near = (p: [number, number]) => NODES.filter((n) => (onHallZ(p) && Math.abs(n[1] - p[1]) < 0.05) || (onHallX(p) && Math.abs(n[0] - p[0]) < 0.05));
+  const d = (p: [number, number], q: [number, number]) => Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]);
+  let best: [number, number][] = [b];
+  let bestLen = Infinity;
+  for (const n1 of near(a)) for (const n2 of near(b)) {
+    const shared = n1[0] === n2[0] || n1[1] === n2[1];
+    const mid: [number, number][] = n1 === n2 ? [n1] : shared ? [n1, n2] : [n1, [n1[0], n2[1]], n2];
+    const pts = [a, ...mid, b];
+    let len = 0;
+    for (let i = 1; i < pts.length; i++) len += d(pts[i - 1]!, pts[i]!);
+    if (len < bestLen) { bestLen = len; best = [...mid, b]; }
+  }
+  return best;
+}
+
+export interface Place { x: number; z: number; rot: number; via: [number, number][] }
+const place = (roomKey: string, x: number, z: number, rot: number): Place => ({ x, z, rot, via: exitVia(roomKey, x, z) });
+
+const musholla = roomByKey('musholla');
+const rapat = roomByKey('rapat');
+/** Places for activities away from the desk (one per person: index % length). Rotation 0 = facing -z (back). */
 export const PLACES: Record<Exclude<Spot, 'meja' | 'rumah'>, Place[]> = {
-  musholla: Array.from({ length: 9 }, (_, i) => {
-    const x = -11.2 + Math.floor(i / 3) * 0.95;
-    const z = -2.85 + (i % 3) * 0.7;
-    return { x, z, rot: Math.PI / 2, via: [[x, -1.25], ...door(-9.8)] };
-  }),
-  kopi: [0, 1, 2, 3].map((i) => ({ x: -11.55, z: 0.95 + i * 0.6, rot: Math.PI / 2, via: [[-10.9, 0.95 + i * 0.6], [-10.9, CORRIDOR]] as [number, number][] })),
-  makan: [
-    ...[-10.1, -9.4, -8.7].map((x) => ({ x, z: 1.25, rot: Math.PI, via: [[x, CORRIDOR]] as [number, number][] })),
-    ...[-10.1, -9.4, -8.7].map((x) => ({ x, z: 2.6, rot: 0, via: [[-7.75, 2.6], [-7.75, CORRIDOR]] as [number, number][] })),
-  ],
+  // Rows facing the qibla wall (west, -x).
+  musholla: Array.from({ length: 9 }, (_, i) => place('musholla', musholla.x0 + 1.4 + Math.floor(i / 3) * 0.95, -0.8 + (i % 3) * 0.8, Math.PI / 2)),
+  kopi: [0, 1, 2, 3].map((i) => place('pantry', -11.75, 5.4 + i * 0.6, Math.PI / 2)),
+  makan: [-9.6, -8.8, -8.0].flatMap((x) => [place('pantry', x, 7.0, Math.PI), place('pantry', x, 8.3, 0)]),
   rapat: [
-    ...[8.9, 9.8, 10.7].map((x) => ({ x, z: -2.85, rot: Math.PI, via: [[x, -3.05], [8.0, -3.05], [8.0, -1.25], ...door(9.8)] as [number, number][] })),
-    ...[8.9, 9.8, 10.7].map((x) => ({ x, z: -1.25, rot: 0, via: [[x, -1.05], ...door(9.8)] as [number, number][] })),
-    { x: 11.65, z: -2.05, rot: Math.PI / 2, via: [[11.65, -1.05], ...door(9.8)] },
-    { x: 7.95, z: -2.05, rot: -Math.PI / 2, via: [[7.95, -1.05], ...door(9.8)] },
+    ...[8.1, 9.0, 9.9].map((x) => place('rapat', x, -1.05, Math.PI)),
+    ...[8.1, 9.0, 9.9].map((x) => place('rapat', x, 1.05, 0)),
+    place('rapat', rapat.x1 - 1.4, 0, Math.PI / 2),
+    place('rapat', rapat.x0 + 1.6, 0, -Math.PI / 2),
   ],
   lounge: [
-    ...[8.7, 9.5, 10.3].map((x) => ({ x, z: 2.45, rot: 0, via: [[x, 1.35], [x, CORRIDOR]] as [number, number][] })),
-    ...[1.35, 2.05].map((z) => ({ x: 11.85, z, rot: Math.PI / 2, via: [[11.2, z], [11.2, CORRIDOR]] as [number, number][] })),
+    ...[-1.6, -0.8, 0.0].map((x) => place('atrium', x, 1.75, 0)),
+    ...[0.9, 1.7].map((z) => place('atrium', 2.05, z, Math.PI / 2)),
   ],
 };
 
-/** Label ruangan (HTML di atas kanvas). */
-export const ROOM_LABELS: { key: string; label: string; x: number; y: number; z: number }[] = [
-  { key: 'musholla', label: '🕌 Musholla', x: -9.8, y: 2.4, z: -3.2 },
-  { key: 'pantry', label: '☕ Pantry & Kopi', x: -9.8, y: 1.9, z: 2.9 },
-  { key: 'creative', label: 'Creative', x: -4.4, y: 2.95, z: -3.3 },
-  { key: 'marketing', label: 'Marketing', x: 1.35, y: 3.2, z: -3.3 },
-  { key: 'webdev', label: 'Web Dev', x: 4.5, y: 2.95, z: -3.3 },
-  { key: 'rapat', label: '🗓️ Ruang Rapat', x: 9.8, y: 2.4, z: -3.2 },
-  { key: 'lounge', label: '🛋️ Lounge', x: 9.8, y: 1.9, z: 2.9 },
-];
+/** Desk exit path: from the chair (in front of the desk, +z) to the corridor. */
+export const deskVia = (roomKey: string, seatX: number, seatZ: number) => exitVia(roomKey, seatX, seatZ);
+
+/** Whole route between two places (each given with its exit path), through the corridors. */
+export function route(from: { x: number; z: number; via: [number, number][] }, to: { x: number; z: number; via: [number, number][] }): [number, number][] {
+  const out = [...from.via];
+  const a = (from.via.at(-1) ?? [from.x, from.z]) as [number, number];
+  const b = (to.via.at(-1) ?? [to.x, to.z]) as [number, number];
+  out.push(...corridorPath(a, b));
+  out.push(...[...to.via].reverse().slice(1), [to.x, to.z]);
+  return out;
+}
+
+/** Entrance (outside the lobby doors) as a place: walk in through the lobby to the corridor. */
+export const ENTRANCE_PLACE: Place = { x: ENTRANCE.x, z: ENTRANCE.z, rot: Math.PI, via: [[0, 10.4], [0, 6.0], [0, HALL_Z[1]!]] };

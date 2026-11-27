@@ -914,7 +914,7 @@ body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
 @media (max-width: 767px) { .ko-hud-actions { gap: 4px; } .ko-hud-btn { padding: 6px 8px; font-size: 10px; } .ko-hud-meta .ko-clock { display: none; } }
 .ko-hud-meta, .ko-hud-actions, .ko-hud-btn { pointer-events: auto; }
 
-.ko-room-pin { position: absolute; left: 0; top: 0; transform: translate3d(-999px, -999px, 0); will-change: transform; transform-origin: center; translate: -50% -50%; padding: 3px 9px; border-radius: 999px; background: rgb(255 255 255 / 78%); color: #271b3f; font: 700 10px Inter, system-ui; letter-spacing: .02em; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 8px rgb(0 0 0 / 12%); }
+.ko-room-pin { position: absolute; left: 0; top: 0; transform: translate3d(-999px, -999px, 0); will-change: transform; translate: -50% -50%; padding: 3px 9px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 82%); color: #271b3f; font: 700 10px Inter, system-ui; letter-spacing: .02em; white-space: nowrap; pointer-events: auto; cursor: zoom-in; box-shadow: 0 2px 8px rgb(0 0 0 / 12%); }
 .ko[data-night] .ko-room-pin { background: rgb(30 26 50 / 78%); color: #f5f3ee; }
 .ko-prayer { display: block; color: #2f7d5b; font-weight: 700; }
 .ko[data-night] .ko-prayer { color: #8fe0b5; }
@@ -923,3 +923,21 @@ body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
 /* Away from the desk (musholla, pantry, meeting, lounge): name only, the room label tells the activity. */
 .ko-tag:not([data-spot=meja]) .ko-name-act { display: none; }
 .ko-tag:not([data-spot=meja]) .ko-name { padding: 3px 8px; font-size: 11px; opacity: .92; }
+
+/* Camera bar: overview, jump to rooms, guided tour */
+.ko-cam { position: fixed; z-index: 6; left: 50%; bottom: 14px; translate: -50% 0; display: flex; gap: 6px; max-width: calc(100vw - 24px); overflow-x: auto; padding: 6px; border-radius: 14px; background: rgb(255 255 255 / 82%); box-shadow: 0 8px 24px rgb(0 0 0 / 16%); backdrop-filter: blur(12px); scrollbar-width: none; }
+.ko-cam button { flex: none; border: 0; border-radius: 10px; padding: 7px 10px; background: transparent; color: #271b3f; font: 700 11px Inter, system-ui; cursor: pointer; white-space: nowrap; }
+.ko-cam button.on, .ko-cam button:hover { background: #271b3f; color: #fff; }
+.ko[data-night] .ko-cam { background: rgb(30 26 50 / 82%); } .ko[data-night] .ko-cam button { color: #f5f3ee; }
+.ko-following { position: fixed; z-index: 6; left: 50%; bottom: 66px; translate: -50% 0; margin: 0; padding: 6px 12px; border-radius: 999px; background: #271b3f; color: #fff; font: 600 11px Inter, system-ui; pointer-events: none; }
+.ko-canvas { touch-action: none; }
+.ko-gaya { bottom: 70px !important; }
+@media (max-width: 767px) { .ko-cam { bottom: 8px; } .ko-cam button { padding: 6px 8px; font-size: 10px; } }
+
+@media (max-width: 767px) {
+  .ko-cam { bottom: 40px; }
+  .ko-following { bottom: 92px; }
+  .ko-room-pin { font-size: 8.5px; padding: 2px 6px; }
+  .ko-tag .ko-name-act { display: none; }
+  .ko-tag .ko-name { font-size: 11px; padding: 3px 8px; }
+}
